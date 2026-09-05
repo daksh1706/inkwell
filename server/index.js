@@ -24,14 +24,14 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Ensure DB is connected before processing any API requests
 app.use(async (req, res, next) => {
-  if (req.originalUrl.startsWith('/api')) {
+  if (req.originalUrl.startsWith('/api') && req.originalUrl !== '/api/health') {
     try {
       await connectDB();
     } catch (err) {
       console.error('Database connection error on request:', err.message);
       return res.status(500).json({
         success: false,
-        message: 'Could not connect to database. Please check MONGODB_URI.',
+        message: `Database connection error: ${err.message}. Please verify MongoDB Atlas Network Access IP Whitelist (allow 0.0.0.0/0).`,
       });
     }
   }
