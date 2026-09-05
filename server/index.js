@@ -16,14 +16,27 @@ const __dirname = path.dirname(__filename);
 // Initialize Express
 const app = express();
 
-// Connect to MongoDB
-connectDB().catch((err) => console.error('Initial DB connect error:', err));
-
 // Middleware
 app.use(cors());
 // Increased body limit to support drawings, backdrops, and PDF snapshots
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Ensure DB is connected before processing any API requests
+app.use(async (req, res, next) => {
+  if (req.originalUrl.startsWith('/api')) {
+    try {
+      await connectDB();
+    } catch (err) {
+      console.error('Database connection error on request:', err.message);
+      return res.status(500).json({
+        success: false,
+        message: 'Could not connect to database. Please check MONGODB_URI.',
+      });
+    }
+  }
+  next();
+});
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -56,7 +69,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Only call listen if run directly (Render, local, VPS)
+// Only call listen if run directly (local / traditional server)
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   const PORT = process.env.PORT || 5001;
   app.listen(PORT, () => {
