@@ -13,6 +13,8 @@
     "start": "node server/index.js"
   },
   "dependencies": {
+    "@vitejs/plugin-react": "^4.3.2",
+    "autoprefixer": "^10.4.20",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
@@ -24,18 +26,16 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174",
     "perfect-freehand": "^1.2.2",
+    "postcss": "^8.4.49",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",
-    "sonner": "^1.7.1"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.2",
-    "autoprefixer": "^10.4.20",
-    "concurrently": "^10.0.5",
-    "nodemon": "^3.1.14",
-    "postcss": "^8.4.49",
+    "sonner": "^1.7.1",
     "tailwindcss": "^3.4.15",
     "vite": "^5.4.11"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "nodemon": "^3.1.14"
   }
 }
