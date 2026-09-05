@@ -1,0 +1,210 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Tactile Creator — Light palette */
+    --background: 48 20% 96%;
+    --foreground: 0 0% 8%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 8%;
+    --primary: 6 100% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 95%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 48 10% 92%;
+    --muted-foreground: 0 0% 42%;
+    --accent: 48 10% 91%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    --ring: 6 100% 56%;
+    --sidebar: 0 0% 99%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 220 12% 5%;
+    --foreground: 210 20% 95%;
+    --card: 220 12% 10%;
+    --card-foreground: 210 20% 95%;
+    --popover: 220 12% 10%;
+    --popover-foreground: 210 20% 95%;
+    --primary: 5 100% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 12% 14%;
+    --secondary-foreground: 210 20% 95%;
+    --muted: 220 12% 16%;
+    --muted-foreground: 210 10% 55%;
+    --accent: 220 12% 16%;
+    --accent-foreground: 210 20% 95%;
+    --destructive: 0 63% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 12% 20%;
+    --input: 220 12% 20%;
+    --ring: 5 100% 62%;
+    --sidebar: 220 12% 7%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+  }
+  h1, h2, h3, h4, h5 {
+    font-family: 'Outfit', sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer components {
+  /* ── Glass panel ── */
+  .glass-panel {
+    @apply bg-card/90 backdrop-blur-2xl border border-border/50;
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.10),
+      0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  }
+  .dark .glass-panel {
+    @apply bg-card/80;
+    box-shadow:
+      0 12px 40px rgba(0, 0, 0, 0.55),
+      0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  }
+
+  /* ── Tool button ── */
+  .tool-btn {
+    @apply inline-flex items-center justify-center w-9 h-9 rounded-xl
+           text-foreground/60 transition-all duration-150 cursor-pointer
+           select-none border border-transparent;
+  }
+  .tool-btn:hover {
+    @apply bg-foreground/5 text-foreground border-border/40;
+    transform: scale(1.05);
+  }
+  .tool-btn.active {
+    @apply text-primary bg-primary/10 border-primary/20;
+  }
+  .tool-btn.active:hover {
+    @apply bg-primary/15;
+  }
+  .tool-btn:disabled {
+    @apply opacity-30 cursor-not-allowed;
+    transform: none;
+  }
+
+  /* ── Dot/grid background ── */
+  .dot-grid {
+    background-image: radial-gradient(circle, hsl(var(--foreground) / 0.15) 1px, transparent 1px);
+    background-size: var(--grid-size, 24px) var(--grid-size, 24px);
+    background-position: var(--grid-offset-x, 0) var(--grid-offset-y, 0);
+  }
+  .dark .dot-grid {
+    background-image: radial-gradient(circle, hsl(var(--foreground) / 0.09) 1px, transparent 1px);
+  }
+
+  /* ── Selection marquee ── */
+  .selection-marquee {
+    fill: hsl(var(--primary) / 0.07);
+    stroke: hsl(var(--primary));
+    stroke-width: 1.5;
+    stroke-dasharray: 5 4;
+    animation: dash-move 0.5s linear infinite;
+  }
+  @keyframes dash-move {
+    to { stroke-dashoffset: -9; }
+  }
+
+  /* ── Prose notes editor ── */
+  .prose-note {
+    font-family: 'IBM Plex Sans', sans-serif;
+    line-height: 1.7;
+    color: hsl(var(--foreground));
+  }
+  .prose-note h1 { font-family: 'Outfit', sans-serif; font-size: 2rem; font-weight: 700; margin: 0.6em 0 0.3em; letter-spacing: -0.02em; }
+  .prose-note h2 { font-family: 'Outfit', sans-serif; font-size: 1.45rem; font-weight: 600; margin: 0.6em 0 0.2em; letter-spacing: -0.02em; }
+  .prose-note h3 { font-family: 'Outfit', sans-serif; font-size: 1.15rem; font-weight: 600; margin: 0.5em 0 0.15em; }
+  .prose-note p  { margin: 0.35em 0; font-size: 0.95rem; }
+  .prose-note ul { list-style: disc; padding-left: 1.5em; margin: 0.4em 0; }
+  .prose-note ol { list-style: decimal; padding-left: 1.5em; margin: 0.4em 0; }
+  .prose-note li { margin: 0.2em 0; font-size: 0.95rem; }
+  .prose-note code { font-family: 'JetBrains Mono', monospace; background: hsl(var(--muted)); padding: 1px 6px; border-radius: 4px; font-size: 0.82em; color: hsl(var(--primary)); }
+  .prose-note pre  { font-family: 'JetBrains Mono', monospace; background: hsl(var(--muted)); padding: 14px; border-radius: 10px; overflow-x: auto; font-size: 0.82em; margin: 0.6em 0; }
+  .prose-note blockquote { border-left: 3px solid hsl(var(--primary)); padding-left: 14px; color: hsl(var(--muted-foreground)); margin: 0.6em 0; font-style: italic; }
+  .prose-note a { color: hsl(var(--primary)); text-decoration: underline; }
+  .prose-note strong { font-weight: 600; }
+  .prose-note[contenteditable]:empty::before {
+    content: attr(data-placeholder);
+    color: hsl(var(--muted-foreground));
+    pointer-events: none;
+    display: block;
+  }
+
+  /* ── Scrollbar ── */
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+
+  /* ── Sidebar item ── */
+  .sidebar-item {
+    @apply flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm
+           text-foreground/70 cursor-pointer transition-all duration-100;
+  }
+  .sidebar-item:hover {
+    @apply bg-foreground/5 text-foreground;
+  }
+  .sidebar-item.active {
+    @apply bg-primary/10 text-primary font-medium;
+  }
+
+  /* ── Topbar pill (view switcher) ── */
+  .view-pill {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+           text-foreground/60 transition-all duration-150 cursor-pointer select-none;
+  }
+  .view-pill:hover {
+    @apply bg-foreground/5 text-foreground;
+  }
+  .view-pill.active {
+    @apply bg-primary text-white shadow-sm;
+  }
+}
+
+@layer utilities {
+  .no-select { user-select: none; -webkit-user-select: none; }
+}
+
+/* Laser pointer glow animation */
+@keyframes laser-pulse {
+  0%, 100% { opacity: 0.9; filter: drop-shadow(0 0 8px #FF331F) drop-shadow(0 0 20px #FF331F88); }
+  50%       { opacity: 1;   filter: drop-shadow(0 0 14px #FF331F) drop-shadow(0 0 30px #FF331FAA); }
+}
+.laser-trail {
+  animation: laser-pulse 0.3s ease-in-out infinite;
+}
+
+/* Laser pointer dot (macOS Keynote-style cursor indicator) */
+@keyframes laser-dot-ping {
+  0%   { transform: scale(1); opacity: 1; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+.laser-dot-ping {
+  animation: laser-dot-ping 0.6s ease-out infinite;
+}
