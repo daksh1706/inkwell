@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // Connect to MongoDB
-connectDB();
+connectDB().catch((err) => console.error('Initial DB connect error:', err));
 
 // Middleware
 app.use(cors());
@@ -34,16 +34,18 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Serve frontend in production
-const distPath = path.resolve(__dirname, '../dist');
-app.use(express.static(distPath));
+// Serve frontend in production when not on Vercel
+if (!process.env.VERCEL) {
+  const distPath = path.resolve(__dirname, '../dist');
+  app.use(express.static(distPath));
 
-app.get('*', (req, res) => {
-  if (req.originalUrl.startsWith('/api')) {
-    return res.status(404).json({ error: 'API endpoint not found' });
-  }
-  res.sendFile(path.join(distPath, 'index.html'));
-});
+  app.get('*', (req, res) => {
+    if (req.originalUrl.startsWith('/api')) {
+      return res.status(404).json({ error: 'API endpoint not found' });
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
 // Global Error Handler
 app.use((err, req, res, next) => {
@@ -54,7 +56,12 @@ app.use((err, req, res, next) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
-});
+// Only call listen if run directly (Render, local, VPS)
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
+  const PORT = process.env.PORT || 5001;
+  app.listen(PORT, () => {
+    console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+  });
+}
+
+export default app;

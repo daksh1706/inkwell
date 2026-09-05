@@ -1,9 +1,22 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from 'sonner';
 
 const AuthContext = createContext(null);
 const TOKEN_KEY = 'inkwell_auth_token';
 const USER_KEY = 'inkwell_auth_user';
+
+async function safeJsonParse(res) {
+  try {
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { message: text || `Server error (${res.status})` };
+    }
+  } catch (e) {
+    return { message: `Network/Server error (${res.status})` };
+  }
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
@@ -41,10 +54,14 @@ export function AuthProvider({ children }) {
         });
 
         if (res.ok) {
-          const data = await res.json();
-          setUser(data.user);
-          localStorage.setItem(USER_KEY, JSON.stringify(data.user));
-          setSyncStatus('synced');
+          const data = await safeJsonParse(res);
+          if (data.user) {
+            setUser(data.user);
+            localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+            setSyncStatus('synced');
+          } else {
+            logout(false);
+          }
         } else {
           // Token expired or invalid
           logout(false);
@@ -77,7 +94,7 @@ export function AuthProvider({ children }) {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      const data = await safeJsonParse(res);
 
       if (!res.ok) {
         throw new Error(data.message || 'Failed to sign in');
@@ -105,7 +122,7 @@ export function AuthProvider({ children }) {
         body: JSON.stringify({ name, email, password, initialWorkspace }),
       });
 
-      const data = await res.json();
+      const data = await safeJsonParse(res);
 
       if (!res.ok) {
         throw new Error(data.message || 'Failed to create account');
