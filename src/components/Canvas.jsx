@@ -228,6 +228,7 @@ export default function Canvas({ page }) {
     const updateSelection = () => {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+        setCharSelection(null);
         return;
       }
       const range = sel.getRangeAt(0);
@@ -537,6 +538,8 @@ export default function Canvas({ page }) {
         }
       } else {
         setSelectedId(null);
+        setCharSelection(null);
+        window.getSelection()?.removeAllRanges();
       }
       return;
     }
@@ -1147,7 +1150,12 @@ export default function Canvas({ page }) {
       })()}
 
       {/* ── Single Unified Floating Action Bar ── */}
-      {(charSelection || selectedId) && (() => {
+      {(() => {
+        // Only show if characters are actively selected, or if a non-handwriting object is selected
+        if (!charSelection && (!selectedId || elements.find(e => e && e.id === selectedId)?.type === 'handwriting')) {
+          return null;
+        }
+
         const targetId = charSelection?.elId || selectedId;
         const el = elements.find(e => e && e.id === targetId);
         if (!el) return null;
@@ -1273,13 +1281,79 @@ export default function Canvas({ page }) {
             {/* Move handle */}
             <div
               className="flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-foreground/80 hover:text-foreground hover:bg-muted/80 rounded-lg cursor-grab active:cursor-grabbing transition-colors"
-              title="Drag to move entire element"
+              title={charSelection ? "Drag to move selected text" : "Drag to move entire element"}
               onPointerDown={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
                 const { x, y } = toCanvas(e.clientX, e.clientY);
-                dragRef.current = { id: el.id, startX: x, startY: y, orig: JSON.parse(JSON.stringify(el)) };
-                wrapRef.current?.setPointerCapture(e.pointerId);
+
+                if (charSelection && el.type === 'handwriting') {
+                  const { startIdx, endIdx, rect } = charSelection;
+                  const fullText = el.text || '';
+                  const selectedText = fullText.slice(startIdx, endIdx + 1);
+
+                  // Copy styles and colors for the slice
+                  const newCharColors = {};
+                  const newCharStyles = {};
+                  for (let i = startIdx; i <= endIdx; i++) {
+                    if (el.charColors?.[i]) newCharColors[i - startIdx] = el.charColors[i];
+                    if (el.charStyles?.[i]) newCharStyles[i - startIdx] = el.charStyles[i];
+                  }
+
+                  const wrapRect = wrapRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
+                  const canvasX = (rect.left - wrapRect.left - transform.x) / transform.scale;
+                  const canvasY = (rect.top - wrapRect.top - transform.y) / transform.scale;
+                  const canvasWidth = rect.width / transform.scale;
+                  const canvasHeight = rect.height / transform.scale;
+
+                  const newId = uid();
+                  const newEl = {
+                    id: newId,
+                    type: 'handwriting',
+                    x: canvasX,
+                    y: canvasY,
+                    width: Math.max(canvasWidth + 20, 100),
+                    maxWidth: Math.max(canvasWidth + 20, 100),
+                    height: Math.max(canvasHeight + 10, 40),
+                    text: selectedText,
+                    fontFamily: el.fontFamily,
+                    fontSize: el.fontSize,
+                    color: el.color,
+                    align: el.align,
+                    charColors: newCharColors,
+                    charStyles: newCharStyles,
+                    erasedIndices: [],
+                  };
+
+                  const updatedOrigErased = new Set(el.erasedIndices || []);
+                  for (let i = startIdx; i <= endIdx; i++) {
+                    updatedOrigErased.add(i);
+                  }
+
+                  const textWithoutSpaces = fullText.replace(/\s/g, '');
+                  const shouldRemoveOrig = updatedOrigErased.size >= textWithoutSpaces.length && textWithoutSpaces.length > 0;
+
+                  setElements(prev => {
+                    let next = prev.map(q => {
+                      if (q && q.id === el.id) {
+                        return shouldRemoveOrig ? null : { ...q, erasedIndices: Array.from(updatedOrigErased) };
+                      }
+                      return q;
+                    }).filter(Boolean);
+                    next = [...next, newEl];
+                    snapshot(next);
+                    return next;
+                  });
+
+                  dragRef.current = { id: newId, startX: x, startY: y, orig: JSON.parse(JSON.stringify(newEl)) };
+                  setSelectedId(newId);
+                  setCharSelection(null);
+                  window.getSelection()?.removeAllRanges();
+                  wrapRef.current?.setPointerCapture(e.pointerId);
+                } else {
+                  dragRef.current = { id: el.id, startX: x, startY: y, orig: JSON.parse(JSON.stringify(el)) };
+                  wrapRef.current?.setPointerCapture(e.pointerId);
+                }
               }}
             >
               <Move className="w-3.5 h-3.5 text-primary" />
