@@ -225,44 +225,83 @@ export default function Canvas({ page }) {
 
   // ── Track text / character selections inside canvas elements ─────────────
   useEffect(() => {
-    const onSelectionChange = () => {
+    const updateSelection = () => {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
         return;
       }
       const range = sel.getRangeAt(0);
-      const startNode = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer;
-      const endNode = range.endContainer.nodeType === 3 ? range.endContainer.parentElement : range.endContainer;
 
-      const startSpan = startNode?.closest?.('[data-char-idx]');
-      const endSpan = endNode?.closest?.('[data-char-idx]');
+      // 1. Direct span resolution
+      const getSpanInfo = (node) => {
+        if (!node) return null;
+        const elem = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        const span = elem?.closest?.('[data-char-idx]');
+        if (!span) return null;
+        const elId = span.dataset.elid;
+        const idx = parseInt(span.dataset.charIdx, 10);
+        return isNaN(idx) || !elId ? null : { elId, idx, span };
+      };
 
-      if (startSpan && endSpan && startSpan.dataset.elid === endSpan.dataset.elid) {
-        const elId = startSpan.dataset.elid;
-        const sIdx = parseInt(startSpan.dataset.charIdx, 10);
-        const eIdx = parseInt(endSpan.dataset.charIdx, 10);
-        if (!isNaN(sIdx) && !isNaN(eIdx)) {
-          const rect = range.getBoundingClientRect();
-          setCharSelection({
-            elId,
-            startIdx: Math.min(sIdx, eIdx),
-            endIdx: Math.max(sIdx, eIdx),
-            rect: {
-              left: rect.left,
-              top: rect.top,
-              right: rect.right,
-              bottom: rect.bottom,
-              width: rect.width,
-              height: rect.height,
-            },
+      const startInfo = getSpanInfo(range.startContainer);
+      const endInfo = getSpanInfo(range.endContainer);
+
+      let foundElId = null;
+      let minIdx = Infinity;
+      let maxIdx = -Infinity;
+
+      if (startInfo && endInfo && startInfo.elId === endInfo.elId) {
+        foundElId = startInfo.elId;
+        minIdx = Math.min(startInfo.idx, endInfo.idx);
+        maxIdx = Math.max(startInfo.idx, endInfo.idx);
+      } else {
+        // 2. Fallback: check intersecting char spans in container
+        const common = range.commonAncestorContainer;
+        const container = common?.nodeType === Node.ELEMENT_NODE ? common : common?.parentElement;
+        const handwritingBlock = container?.closest?.('.handwriting-text-block') || container?.closest?.('[data-elid]');
+        if (handwritingBlock) {
+          const elId = handwritingBlock.dataset.elid;
+          const spans = handwritingBlock.querySelectorAll('[data-char-idx]');
+          spans.forEach(span => {
+            if (sel.containsNode(span, true)) {
+              const idx = parseInt(span.dataset.charIdx, 10);
+              if (!isNaN(idx)) {
+                foundElId = elId;
+                if (idx < minIdx) minIdx = idx;
+                if (idx > maxIdx) maxIdx = idx;
+              }
+            }
           });
-          setSelectedId(elId);
         }
+      }
+
+      if (foundElId && isFinite(minIdx) && isFinite(maxIdx)) {
+        const rect = range.getBoundingClientRect();
+        setCharSelection({
+          elId: foundElId,
+          startIdx: minIdx,
+          endIdx: maxIdx,
+          rect: {
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+          },
+        });
+        setSelectedId(foundElId);
       }
     };
 
-    document.addEventListener('selectionchange', onSelectionChange);
-    return () => document.removeEventListener('selectionchange', onSelectionChange);
+    document.addEventListener('selectionchange', updateSelection);
+    window.addEventListener('mouseup', updateSelection);
+    window.addEventListener('pointerup', updateSelection);
+    return () => {
+      document.removeEventListener('selectionchange', updateSelection);
+      window.removeEventListener('mouseup', updateSelection);
+      window.removeEventListener('pointerup', updateSelection);
+    };
   }, []);
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
@@ -480,7 +519,11 @@ export default function Canvas({ page }) {
         setSelectedId(elId);
 
         const targetEl = elements.find(q => q && q.id === elId);
-        const isHandwritingCharClick = targetEl?.type === 'handwriting' && (e.target.closest('[data-char-idx]') || e.target.closest('[data-line-idx]'));
+        const isHandwritingCharClick = targetEl?.type === 'handwriting' && (
+          e.target.closest('[data-char-idx]') ||
+          e.target.closest('[data-line-idx]') ||
+          e.target.closest('.handwriting-text-block')
+        );
 
         if (!isHandwritingCharClick) {
           setElements(prev => {
@@ -797,11 +840,12 @@ export default function Canvas({ page }) {
             y={el.y}
             width={width + 30}
             height={height + 40}
-            style={{ overflow: 'visible' }}
+            style={{ overflow: 'visible', pointerEvents: 'auto' }}
           >
             <div
               xmlns="http://www.w3.org/1999/xhtml"
               data-elid={el.id}
+              className="handwriting-text-block"
               style={{
                 fontFamily: `"${fontFam}", cursive, sans-serif`,
                 fontSize: `${el.fontSize || 28}px`,
@@ -813,6 +857,7 @@ export default function Canvas({ page }) {
                 width: `${width}px`,
                 userSelect: tool === 'select' ? 'text' : 'none',
                 WebkitUserSelect: tool === 'select' ? 'text' : 'none',
+                touchAction: 'auto',
                 padding: '4px',
                 pointerEvents: 'auto',
                 cursor: tool === 'eraser' ? 'crosshair' : tool === 'select' ? 'text' : undefined,
@@ -836,6 +881,7 @@ export default function Canvas({ page }) {
                         const isErased = erasedSet.has(absIdx);
                         const cColor = charColors[absIdx] || el.color || '#111111';
                         const cStyle = charStyles[absIdx] || {};
+                        const isCharSelected = charSelection && charSelection.elId === el.id && absIdx >= charSelection.startIdx && absIdx <= charSelection.endIdx;
 
                         return (
                           <span
@@ -843,15 +889,17 @@ export default function Canvas({ page }) {
                             data-elid={el.id}
                             data-char-idx={absIdx}
                             style={{
-                              display: 'inline-block',
-                              whiteSpace: 'pre',
+                              display: 'inline',
                               visibility: isErased ? 'hidden' : 'visible',
                               color: cColor,
                               fontWeight: cStyle.bold ? 'bold' : undefined,
                               fontStyle: cStyle.italic ? 'italic' : undefined,
                               textDecoration: cStyle.underline ? 'underline' : undefined,
-                              backgroundColor: cStyle.highlight || undefined,
-                              borderRadius: cStyle.highlight ? '2px' : undefined,
+                              backgroundColor: isCharSelected
+                                ? (cStyle.highlight ? 'rgba(255, 200, 0, 0.6)' : 'rgba(255, 51, 31, 0.22)')
+                                : (cStyle.highlight || undefined),
+                              borderRadius: (isCharSelected || cStyle.highlight) ? '2px' : undefined,
+                              boxShadow: isCharSelected ? '0 0 0 1.5px rgba(255, 51, 31, 0.6)' : undefined,
                               userSelect: tool === 'select' ? 'text' : 'none',
                             }}
                           >
@@ -885,7 +933,7 @@ export default function Canvas({ page }) {
     }
 
     return null;
-  }, [tool, selectedId]);
+  }, [tool, selectedId, charSelection]);
 
   // ── Selection box ─────────────────────────────────────────────────────────
   const selectionBox = useMemo(() => {
