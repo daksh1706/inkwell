@@ -239,9 +239,14 @@ export default function Canvas({ page }) {
           setCharSelection(null);
           return;
         }
+        const textStr = sel.toString();
+        if (!textStr || textStr.trim().length === 0) {
+          setCharSelection(null);
+          return;
+        }
         const range = sel.getRangeAt(0);
 
-        // 1. Direct span resolution
+        // 1. Direct span resolution ONLY on actual span with data-char-idx
         const getSpanInfo = (node, offset = 0, isEnd = false) => {
           if (!node) return null;
           let targetNode = node;
@@ -264,22 +269,16 @@ export default function Canvas({ page }) {
         const startInfo = getSpanInfo(range.startContainer, range.startOffset, false);
         const endInfo = getSpanInfo(range.endContainer, range.endOffset, true);
 
-        let foundElId = null;
-        let minIdx = Infinity;
-        let maxIdx = -Infinity;
-
-        if (startInfo && endInfo && startInfo.elId === endInfo.elId) {
-          foundElId = startInfo.elId;
-          minIdx = Math.min(startInfo.idx, endInfo.idx);
-          maxIdx = Math.max(startInfo.idx, endInfo.idx);
-        } else if (startInfo || endInfo) {
-          const info = startInfo || endInfo;
-          foundElId = info.elId;
-          minIdx = info.idx;
-          maxIdx = info.idx;
+        if (!startInfo || !endInfo || startInfo.elId !== endInfo.elId) {
+          setCharSelection(null);
+          return;
         }
 
-        if (foundElId && isFinite(minIdx) && isFinite(maxIdx)) {
+        const foundElId = startInfo.elId;
+        const minIdx = Math.min(startInfo.idx, endInfo.idx);
+        const maxIdx = Math.max(startInfo.idx, endInfo.idx);
+
+        if (foundElId && isFinite(minIdx) && isFinite(maxIdx) && maxIdx >= minIdx) {
           const rect = range.getBoundingClientRect();
           const selData = {
             elId: foundElId,
@@ -297,6 +296,8 @@ export default function Canvas({ page }) {
           setCharSelection(selData);
           lastCharSelectionRef.current = selData;
           setSelectedId(foundElId);
+        } else {
+          setCharSelection(null);
         }
       });
     };
@@ -547,27 +548,14 @@ export default function Canvas({ page }) {
         }
         setSelectedId(elId);
 
-        const targetEl = elements.find(q => q && q.id === elId);
-        const isTextCharClick = Boolean(
-          targetEl?.type === 'handwriting' ||
-          targetEl?.type === 'text' ||
-          e.target.closest('[data-char-idx]') ||
-          e.target.closest('[data-line-idx]') ||
-          e.target.closest('.handwriting-text-block') ||
-          e.target.closest('.canvas-text-block') ||
-          e.target.closest('.canvas-sticky-text')
-        );
-
-        if (!isTextCharClick) {
-          setElements(prev => {
-            const el = prev.find(q => q && q.id === elId);
-            if (el) {
-              dragRef.current = { id: elId, startX: x, startY: y, orig: JSON.parse(JSON.stringify(el)) };
-            }
-            return prev;
-          });
-          e.currentTarget.setPointerCapture(e.pointerId);
-        }
+        setElements(prev => {
+          const el = prev.find(q => q && q.id === elId);
+          if (el) {
+            dragRef.current = { id: elId, startX: x, startY: y, orig: JSON.parse(JSON.stringify(el)) };
+          }
+          return prev;
+        });
+        e.currentTarget.setPointerCapture(e.pointerId);
       } else {
         setSelectedId(null);
         setCharSelection(null);
@@ -872,12 +860,12 @@ export default function Canvas({ page }) {
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
                 width: `${width}px`,
-                userSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
-                WebkitUserSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
-                touchAction: 'auto',
+                userSelect: tool === 'text' ? 'text' : 'none',
+                WebkitUserSelect: tool === 'text' ? 'text' : 'none',
+                touchAction: 'none',
                 padding: '4px',
                 pointerEvents: 'auto',
-                cursor: tool === 'eraser' ? 'crosshair' : (tool === 'select' || tool === 'text') ? 'text' : undefined,
+                cursor: tool === 'eraser' ? 'crosshair' : tool === 'text' ? 'text' : undefined,
               }}
             >
               {lines.map((line, lineIdx) => {
@@ -913,9 +901,9 @@ export default function Canvas({ page }) {
                               textDecoration: cStyle.underline ? 'underline' : undefined,
                               backgroundColor: cStyle.highlight || undefined,
                               borderRadius: cStyle.highlight ? '3px' : undefined,
-                              userSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
-                              WebkitUserSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
-                              cursor: (tool === 'select' || tool === 'text') ? 'text' : undefined,
+                              userSelect: tool === 'text' ? 'text' : 'none',
+                              WebkitUserSelect: tool === 'text' ? 'text' : 'none',
+                              cursor: tool === 'text' ? 'text' : undefined,
                             }}
                           >
                             {char}
@@ -948,9 +936,9 @@ export default function Canvas({ page }) {
               style={{
                 fontFamily: 'Caveat, cursive', fontSize: 20, lineHeight: 1.3,
                 color: '#111', whiteSpace: 'pre-wrap', overflow: 'hidden', height: '100%',
-                userSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
-                WebkitUserSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
-                cursor: (tool === 'select' || tool === 'text') ? 'text' : undefined,
+                userSelect: tool === 'text' ? 'text' : 'none',
+                WebkitUserSelect: tool === 'text' ? 'text' : 'none',
+                cursor: tool === 'text' ? 'text' : undefined,
                 pointerEvents: (tool === 'select' || tool === 'text') ? 'auto' : 'none',
               }}
             >
@@ -995,12 +983,12 @@ export default function Canvas({ page }) {
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
                 width: `${width}px`,
-                userSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
-                WebkitUserSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
-                touchAction: 'auto',
+                userSelect: tool === 'text' ? 'text' : 'none',
+                WebkitUserSelect: tool === 'text' ? 'text' : 'none',
+                touchAction: 'none',
                 padding: '4px',
                 pointerEvents: 'auto',
-                cursor: tool === 'eraser' ? 'crosshair' : (tool === 'select' || tool === 'text') ? 'text' : undefined,
+                cursor: tool === 'eraser' ? 'crosshair' : tool === 'text' ? 'text' : undefined,
               }}
             >
               {lines.map((line, lineIdx) => {
@@ -1036,9 +1024,9 @@ export default function Canvas({ page }) {
                               textDecoration: cStyle.underline ? 'underline' : undefined,
                               backgroundColor: cStyle.highlight || undefined,
                               borderRadius: cStyle.highlight ? '3px' : undefined,
-                              userSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
-                              WebkitUserSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
-                              cursor: (tool === 'select' || tool === 'text') ? 'text' : undefined,
+                              userSelect: tool === 'text' ? 'text' : 'none',
+                              WebkitUserSelect: tool === 'text' ? 'text' : 'none',
+                              cursor: tool === 'text' ? 'text' : undefined,
                             }}
                           >
                             {char}
@@ -1054,6 +1042,7 @@ export default function Canvas({ page }) {
         </g>
       );
     }
+
 
     if (el.type === 'image') {
       return (

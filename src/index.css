@@ -202,18 +202,7 @@
 
 @layer utilities {
   .no-select { user-select: none; -webkit-user-select: none; }
-  .select-text { user-select: text !important; -webkit-user-select: text !important; }
-
-  /* ── Smooth character & text selection styling matching notes section ── */
-  .canvas-text-block,
-  .canvas-text-block *,
-  .handwriting-text-block,
-  .handwriting-text-block *,
-  .canvas-sticky-text,
-  .canvas-sticky-text * {
-    user-select: text !important;
-    -webkit-user-select: text !important;
-  }
+  .select-text { user-select: text; -webkit-user-select: text; }
 
   ::selection {
     background: rgba(255, 51, 31, 0.22);
