@@ -140,6 +140,17 @@ function elementsToSvgInner(elements) {
                    : 'IBM Plex Sans, sans-serif';
       return `<text x="${el.x}" y="${el.y + (el.fontSize || 18)}" font-size="${el.fontSize || 18}" fill="${el.color}" font-family="${family}">${safe}</text>`;
     }
+    if (el.type === 'handwriting') {
+      const safe = (el.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const fontFam = el.fontFamily || 'Caveat';
+      return `
+        <foreignObject x="${el.x}" y="${el.y}" width="${el.maxWidth || el.width || 400}" height="${el.height || 180}">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="font-family: '${fontFam}', cursive, sans-serif; font-size: ${el.fontSize || 28}px; line-height: 1.35; color: ${el.color || '#111'}; white-space: pre-wrap; word-break: break-word;">
+            ${safe}
+          </div>
+        </foreignObject>
+      `;
+    }
     if (el.type === 'sticky') {
       const safe = (el.text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       return `

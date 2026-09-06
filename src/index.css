@@ -189,14 +189,45 @@
 
 @layer utilities {
   .no-select { user-select: none; -webkit-user-select: none; }
+  .select-text { user-select: text !important; -webkit-user-select: text !important; }
+
+  /* ── Smooth character & text selection styling matching notes section ── */
+  .canvas-text-block,
+  .canvas-text-block *,
   .handwriting-text-block,
-  .handwriting-text-block * {
+  .handwriting-text-block *,
+  .canvas-sticky-text,
+  .canvas-sticky-text * {
     user-select: text !important;
     -webkit-user-select: text !important;
   }
-  .handwriting-text-block ::selection {
+
+  ::selection {
     background: rgba(255, 51, 31, 0.22);
     color: inherit;
+  }
+  .dark ::selection {
+    background: rgba(255, 75, 45, 0.32);
+    color: inherit;
+  }
+
+  .canvas-text-block ::selection,
+  .handwriting-text-block ::selection,
+  .canvas-sticky-text ::selection,
+  .prose-note ::selection {
+    background: rgba(255, 51, 31, 0.24);
+    color: inherit;
+  }
+  .dark .canvas-text-block ::selection,
+  .dark .handwriting-text-block ::selection,
+  .dark .canvas-sticky-text ::selection,
+  .dark .prose-note ::selection {
+    background: rgba(255, 75, 45, 0.35);
+    color: inherit;
+  }
+
+  .canvas-char-span {
+    transition: background-color 0.1s ease, color 0.1s ease;
   }
 }
 
