@@ -266,11 +266,14 @@ export default function Canvas({ page }) {
         setElements(prev => {
           return prev.map(el => {
             if (el && el.id === elId && el.type === 'handwriting') {
-              const text = el.text || '';
-              if (charIdx >= 0 && charIdx < text.length) {
-                const newText = text.slice(0, charIdx) + text.slice(charIdx + 1);
-                if (newText.trim() === '') return null;
-                return { ...el, text: newText };
+              const currentErased = new Set(el.erasedIndices || []);
+              if (!currentErased.has(charIdx)) {
+                currentErased.add(charIdx);
+                const textWithoutSpaces = (el.text || '').replace(/\s/g, '');
+                if (currentErased.size >= textWithoutSpaces.length && textWithoutSpaces.length > 0) {
+                  return null;
+                }
+                return { ...el, erasedIndices: Array.from(currentErased) };
               }
             }
             return el;
@@ -291,11 +294,20 @@ export default function Canvas({ page }) {
             if (el && el.id === elId && el.type === 'handwriting') {
               const lines = (el.text || '').split('\n');
               if (lineIdx >= 0 && lineIdx < lines.length) {
-                // Erase the line
-                lines.splice(lineIdx, 1);
-                const newText = lines.join('\n');
-                if (newText.trim() === '') return null;
-                return { ...el, text: newText };
+                let startIdx = 0;
+                for (let i = 0; i < lineIdx; i++) {
+                  startIdx += lines[i].length + 1;
+                }
+                const endIdx = startIdx + lines[lineIdx].length;
+                const currentErased = new Set(el.erasedIndices || []);
+                for (let c = startIdx; c <= endIdx; c++) {
+                  currentErased.add(c);
+                }
+                const textWithoutSpaces = (el.text || '').replace(/\s/g, '');
+                if (currentErased.size >= textWithoutSpaces.length && textWithoutSpaces.length > 0) {
+                  return null;
+                }
+                return { ...el, erasedIndices: Array.from(currentErased) };
               }
             }
             return el;
@@ -665,6 +677,7 @@ export default function Canvas({ page }) {
       const width = el.maxWidth || el.width || 400;
       const height = el.height || 180;
       const lines = (el.text || '').split('\n');
+      const erasedSet = new Set(el.erasedIndices || []);
       let cumulativeCharIndex = 0;
 
       return (
@@ -707,19 +720,25 @@ export default function Canvas({ page }) {
                     {line.length === 0 ? (
                       <span data-elid={el.id} data-char-idx={lineStartCharIdx}>&nbsp;</span>
                     ) : (
-                      line.split('').map((char, cIdx) => (
-                        <span
-                          key={cIdx}
-                          data-elid={el.id}
-                          data-char-idx={lineStartCharIdx + cIdx}
-                          style={{
-                            display: 'inline-block',
-                            whiteSpace: 'pre',
-                          }}
-                        >
-                          {char}
-                        </span>
-                      ))
+                      line.split('').map((char, cIdx) => {
+                        const absIdx = lineStartCharIdx + cIdx;
+                        const isErased = erasedSet.has(absIdx);
+                        return (
+                          <span
+                            key={cIdx}
+                            data-elid={el.id}
+                            data-char-idx={absIdx}
+                            style={{
+                              display: 'inline-block',
+                              whiteSpace: 'pre',
+                              visibility: isErased ? 'hidden' : 'visible',
+                              userSelect: 'none',
+                            }}
+                          >
+                            {char}
+                          </span>
+                        );
+                      })
                     )}
                   </div>
                 );
