@@ -45,8 +45,8 @@ export default function Canvas({ page }) {
   const [draft,       setDraft]       = useState(null);
   const [selectedId,  setSelectedId]  = useState(null);
   const [editingId,   setEditingId]   = useState(null);
-  const [editText,    setEditText]    = useState('');
   const [charSelection, setCharSelection] = useState(null);
+  const lastCharSelectionRef = useRef(null);
 
   // ── History ────────────────────────────────────────────────────────────
   const historyRef = useRef([(page.canvas?.elements || []).filter(Boolean)]);
@@ -278,7 +278,7 @@ export default function Canvas({ page }) {
 
       if (foundElId && isFinite(minIdx) && isFinite(maxIdx)) {
         const rect = range.getBoundingClientRect();
-        setCharSelection({
+        const selData = {
           elId: foundElId,
           startIdx: minIdx,
           endIdx: maxIdx,
@@ -290,7 +290,9 @@ export default function Canvas({ page }) {
             width: rect.width,
             height: rect.height,
           },
-        });
+        };
+        setCharSelection(selData);
+        lastCharSelectionRef.current = selData;
         setSelectedId(foundElId);
       }
     };
@@ -539,6 +541,7 @@ export default function Canvas({ page }) {
       } else {
         setSelectedId(null);
         setCharSelection(null);
+        lastCharSelectionRef.current = null;
         window.getSelection()?.removeAllRanges();
       }
       return;
@@ -1151,20 +1154,21 @@ export default function Canvas({ page }) {
 
       {/* ── Single Unified Floating Action Bar ── */}
       {(() => {
+        const activeCharSel = charSelection || lastCharSelectionRef.current;
         // Only show if characters are actively selected, or if a non-handwriting object is selected
-        if (!charSelection && (!selectedId || elements.find(e => e && e.id === selectedId)?.type === 'handwriting')) {
+        if (!activeCharSel && (!selectedId || elements.find(e => e && e.id === selectedId)?.type === 'handwriting')) {
           return null;
         }
 
-        const targetId = charSelection?.elId || selectedId;
+        const targetId = activeCharSel?.elId || selectedId;
         const el = elements.find(e => e && e.id === targetId);
         if (!el) return null;
 
         let posX = 0;
         let posY = 0;
 
-        if (charSelection) {
-          const { rect } = charSelection;
+        if (activeCharSel) {
+          const { rect } = activeCharSel;
           const containerRect = wrapRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
           posX = rect.left - containerRect.left + rect.width / 2;
           posY = rect.top - containerRect.top - 44;
@@ -1185,18 +1189,18 @@ export default function Canvas({ page }) {
         }
 
         const isHandwriting = el.type === 'handwriting';
-        const isBold = charSelection
-          ? el.charStyles?.[charSelection.startIdx]?.bold
+        const isBold = activeCharSel
+          ? el.charStyles?.[activeCharSel.startIdx]?.bold
           : false;
-        const isItalic = charSelection
-          ? el.charStyles?.[charSelection.startIdx]?.italic
+        const isItalic = activeCharSel
+          ? el.charStyles?.[activeCharSel.startIdx]?.italic
           : false;
-        const isHighlight = charSelection
-          ? el.charStyles?.[charSelection.startIdx]?.highlight
+        const isHighlight = activeCharSel
+          ? el.charStyles?.[activeCharSel.startIdx]?.highlight
           : false;
 
         const handleDelete = () => {
-          if (charSelection) {
+          if (activeCharSel) {
             deleteSelectedChars();
           } else {
             deleteSelected();
@@ -1204,7 +1208,7 @@ export default function Canvas({ page }) {
         };
 
         const toggleBold = () => {
-          if (charSelection) {
+          if (activeCharSel) {
             applyCharStyle({ bold: !isBold });
           } else if (isHandwriting) {
             const textLen = (el.text || '').length;
@@ -1226,7 +1230,7 @@ export default function Canvas({ page }) {
         };
 
         const toggleItalic = () => {
-          if (charSelection) {
+          if (activeCharSel) {
             applyCharStyle({ italic: !isItalic });
           } else if (isHandwriting) {
             const textLen = (el.text || '').length;
@@ -1248,7 +1252,7 @@ export default function Canvas({ page }) {
         };
 
         const toggleHighlight = () => {
-          if (charSelection) {
+          if (activeCharSel) {
             applyCharStyle({ highlight: isHighlight ? null : 'rgba(255, 214, 0, 0.35)' });
           } else if (isHandwriting) {
             const textLen = (el.text || '').length;
@@ -1272,6 +1276,7 @@ export default function Canvas({ page }) {
         return (
           <div
             data-toolbar="true"
+            onMouseDown={(e) => e.preventDefault()}
             className="absolute z-40 flex items-center gap-1.5 px-2.5 py-1 bg-card/95 text-card-foreground border border-border shadow-2xl rounded-2xl backdrop-blur-xl -translate-x-1/2 select-none animate-in fade-in zoom-in-95 duration-150"
             style={{
               left: Math.max(140, Math.min(window.innerWidth - 160, posX)),
@@ -1281,14 +1286,14 @@ export default function Canvas({ page }) {
             {/* Move handle */}
             <div
               className="flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-foreground/80 hover:text-foreground hover:bg-muted/80 rounded-lg cursor-grab active:cursor-grabbing transition-colors"
-              title={charSelection ? "Drag to move selected text" : "Drag to move entire element"}
+              title={activeCharSel ? "Drag to move selected text" : "Drag to move entire element"}
               onPointerDown={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
                 const { x, y } = toCanvas(e.clientX, e.clientY);
 
-                if (charSelection && el.type === 'handwriting') {
-                  const { startIdx, endIdx, rect } = charSelection;
+                if (activeCharSel && el.type === 'handwriting') {
+                  const { startIdx, endIdx, rect } = activeCharSel;
                   const fullText = el.text || '';
                   const selectedText = fullText.slice(startIdx, endIdx + 1);
 
@@ -1348,6 +1353,7 @@ export default function Canvas({ page }) {
                   dragRef.current = { id: newId, startX: x, startY: y, orig: JSON.parse(JSON.stringify(newEl)) };
                   setSelectedId(newId);
                   setCharSelection(null);
+                  lastCharSelectionRef.current = null;
                   window.getSelection()?.removeAllRanges();
                   wrapRef.current?.setPointerCapture(e.pointerId);
                 } else {
@@ -1402,12 +1408,12 @@ export default function Canvas({ page }) {
             <button
               type="button"
               data-testid="selection-delete-btn"
-              title={charSelection ? "Erase selected characters" : "Delete selected item (Del / Backspace)"}
+              title={activeCharSel ? "Erase selected characters" : "Delete selected item (Del / Backspace)"}
               onClick={handleDelete}
               className="flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5 text-destructive" />
-              <span>{charSelection ? 'Erase' : 'Delete'}</span>
+              <span>{activeCharSel ? 'Erase' : 'Delete'}</span>
             </button>
 
             {/* Close / Deselect */}
@@ -1416,6 +1422,7 @@ export default function Canvas({ page }) {
               title="Deselect"
               onClick={() => {
                 setCharSelection(null);
+                lastCharSelectionRef.current = null;
                 setSelectedId(null);
               }}
               className="p-1 rounded-lg hover:bg-muted text-muted-foreground transition-colors ml-0.5"
