@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { actions, uid } from '@/lib/store';
 import CanvasToolbar from '@/components/CanvasToolbar';
 import { getStroke } from 'perfect-freehand';
-import { Trash2, Bold, Italic, Highlighter, Palette, X } from 'lucide-react';
+import { Trash2, Bold, Italic, Highlighter, Palette, X, Move } from 'lucide-react';
 
 const SHAPE_TOOLS = ['rect', 'ellipse', 'line', 'arrow'];
 const LASER_DECAY = 900; // ms
@@ -478,17 +478,23 @@ export default function Canvas({ page }) {
           }
         }
         setSelectedId(elId);
-        setElements(prev => {
-          const el = prev.find(q => q && q.id === elId);
-          if (el) {
-            dragRef.current = { id: elId, startX: x, startY: y, orig: JSON.parse(JSON.stringify(el)) };
-          }
-          return prev;
-        });
+
+        const targetEl = elements.find(q => q && q.id === elId);
+        const isHandwritingCharClick = targetEl?.type === 'handwriting' && (e.target.closest('[data-char-idx]') || e.target.closest('[data-line-idx]'));
+
+        if (!isHandwritingCharClick) {
+          setElements(prev => {
+            const el = prev.find(q => q && q.id === elId);
+            if (el) {
+              dragRef.current = { id: elId, startX: x, startY: y, orig: JSON.parse(JSON.stringify(el)) };
+            }
+            return prev;
+          });
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }
       } else {
         setSelectedId(null);
       }
-      e.currentTarget.setPointerCapture(e.pointerId);
       return;
     }
 
@@ -885,7 +891,7 @@ export default function Canvas({ page }) {
   const selectionBox = useMemo(() => {
     if (!selectedId) return null;
     const el = elements.find(e => e && e.id === selectedId);
-    if (!el) return null;
+    if (!el || el.type === 'handwriting') return null;
     let bbox;
     if (['rect', 'ellipse', 'sticky'].includes(el.type)) bbox = { x: el.x, y: el.y, w: Math.abs(el.w), h: Math.abs(el.h) };
     else if (['line', 'arrow'].includes(el.type)) {
@@ -893,7 +899,6 @@ export default function Canvas({ page }) {
       bbox = { x: minX, y: minY, w: Math.abs(el.x2 - el.x1), h: Math.abs(el.y2 - el.y1) };
     }
     else if (el.type === 'text') bbox = { x: el.x - 2, y: el.y, w: (el.text?.length || 1) * (el.fontSize || 18) * 0.55, h: (el.fontSize || 18) + 8 };
-    else if (el.type === 'handwriting') bbox = { x: el.x - 4, y: el.y - 4, w: (el.maxWidth || el.width || 300) + 16, h: (el.height || 100) + 20 };
     else if (el.type === 'image') bbox = { x: el.x - 2, y: el.y - 2, w: (el.w || 200) + 4, h: (el.h || 150) + 4 };
     else if (el.type === 'pen') {
       const xs = el.points.map(p => p[0]), ys = el.points.map(p => p[1]);
@@ -1121,6 +1126,24 @@ export default function Canvas({ page }) {
             className="absolute z-30 flex items-center gap-1.5 px-2.5 py-1 bg-card/95 text-card-foreground border border-border shadow-xl rounded-xl backdrop-blur-md -translate-x-1/2 select-none"
             style={{ left: Math.max(90, sx), top: Math.max(16, sy) }}
           >
+            {/* Move handle for dragging entire element */}
+            <div
+              className="flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-foreground/80 hover:text-foreground hover:bg-muted/80 rounded-md cursor-grab active:cursor-grabbing transition-colors"
+              title="Drag to move entire element"
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const { x, y } = toCanvas(e.clientX, e.clientY);
+                dragRef.current = { id: el.id, startX: x, startY: y, orig: JSON.parse(JSON.stringify(el)) };
+                wrapRef.current?.setPointerCapture(e.pointerId);
+              }}
+            >
+              <Move className="w-3.5 h-3.5 text-primary" />
+              <span>Move</span>
+            </div>
+
+            <div className="w-px h-3.5 bg-border mx-0.5" />
+
             <span className="text-[10px] font-mono uppercase font-semibold text-muted-foreground">
               {el.type === 'handwriting' ? 'Handwriting' : el.type}
             </span>
@@ -1151,37 +1174,10 @@ export default function Canvas({ page }) {
             data-toolbar="true"
             className="absolute z-40 flex items-center gap-1.5 p-1.5 bg-card/95 text-card-foreground border border-border shadow-2xl rounded-2xl backdrop-blur-xl -translate-x-1/2 select-none animate-in fade-in zoom-in-95 duration-150"
             style={{
-              left: Math.max(160, Math.min(window.innerWidth - 200, floatingX)),
+              left: Math.max(120, Math.min(window.innerWidth - 180, floatingX)),
               top: Math.max(16, floatingY),
             }}
           >
-            {/* Colors */}
-            <div className="flex items-center gap-1 px-1">
-              {['#111111', '#FF331F', '#0033FF', '#00C853', '#FFD600', '#AA00FF', '#FF7A00'].map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  title={`Color: ${c}`}
-                  onClick={() => applyCharStyle({ color: c })}
-                  className="w-5 h-5 rounded-full border border-border/50 hover:scale-125 transition-transform shadow-sm"
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-              <label
-                className="w-5 h-5 rounded-full border border-dashed border-border flex items-center justify-center cursor-pointer hover:scale-125 transition-transform"
-                title="Custom color"
-              >
-                <Palette className="w-3 h-3 text-muted-foreground" />
-                <input
-                  type="color"
-                  onChange={(e) => applyCharStyle({ color: e.target.value })}
-                  className="w-0 h-0 opacity-0 absolute"
-                />
-              </label>
-            </div>
-
-            <div className="w-px h-4 bg-border mx-0.5" />
-
             {/* Bold */}
             <button
               type="button"
