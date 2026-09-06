@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { actions, uid } from '@/lib/store';
 import CanvasToolbar from '@/components/CanvasToolbar';
 import { getStroke } from 'perfect-freehand';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Bold, Italic, Highlighter, Palette, X } from 'lucide-react';
 
 const SHAPE_TOOLS = ['rect', 'ellipse', 'line', 'arrow'];
 const LASER_DECAY = 900; // ms
@@ -46,6 +46,7 @@ export default function Canvas({ page }) {
   const [selectedId,  setSelectedId]  = useState(null);
   const [editingId,   setEditingId]   = useState(null);
   const [editText,    setEditText]    = useState('');
+  const [charSelection, setCharSelection] = useState(null);
 
   // ── History ────────────────────────────────────────────────────────────
   const historyRef = useRef([(page.canvas?.elements || []).filter(Boolean)]);
@@ -162,6 +163,107 @@ export default function Canvas({ page }) {
     });
     setSelectedId(null);
   }, [selectedId, snapshot]);
+
+  // ── Character formatting & styling callbacks ──────────────────────────────
+  const applyCharStyle = useCallback((stylePatch) => {
+    if (!charSelection) return;
+    const { elId, startIdx, endIdx } = charSelection;
+    setElements(prev => {
+      const next = prev.map(el => {
+        if (el && el.id === elId && el.type === 'handwriting') {
+          const charColors = { ...(el.charColors || {}) };
+          const charStyles = { ...(el.charStyles || {}) };
+          for (let i = startIdx; i <= endIdx; i++) {
+            if (stylePatch.color !== undefined) {
+              charColors[i] = stylePatch.color;
+            }
+            charStyles[i] = { ...(charStyles[i] || {}), ...stylePatch };
+          }
+          return { ...el, charColors, charStyles };
+        }
+        return el;
+      });
+      snapshot(next);
+      return next;
+    });
+  }, [charSelection, snapshot]);
+
+  const deleteSelectedChars = useCallback(() => {
+    if (!charSelection) return;
+    const { elId, startIdx, endIdx } = charSelection;
+    setElements(prev => {
+      return prev.map(el => {
+        if (el && el.id === elId && el.type === 'handwriting') {
+          const currentErased = new Set(el.erasedIndices || []);
+          for (let i = startIdx; i <= endIdx; i++) {
+            currentErased.add(i);
+          }
+          const textWithoutSpaces = (el.text || '').replace(/\s/g, '');
+          if (currentErased.size >= textWithoutSpaces.length && textWithoutSpaces.length > 0) {
+            return null;
+          }
+          return { ...el, erasedIndices: Array.from(currentErased) };
+        }
+        return el;
+      }).filter(Boolean);
+    });
+    setCharSelection(null);
+  }, [charSelection]);
+
+  const handleColorChange = useCallback((newColor) => {
+    setColor(newColor);
+    if (charSelection) {
+      applyCharStyle({ color: newColor });
+    } else if (selectedId) {
+      setElements(prev => {
+        const next = prev.map(el => el && el.id === selectedId ? { ...el, color: newColor } : el);
+        snapshot(next);
+        return next;
+      });
+    }
+  }, [charSelection, selectedId, applyCharStyle, snapshot]);
+
+  // ── Track text / character selections inside canvas elements ─────────────
+  useEffect(() => {
+    const onSelectionChange = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      const startNode = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer;
+      const endNode = range.endContainer.nodeType === 3 ? range.endContainer.parentElement : range.endContainer;
+
+      const startSpan = startNode?.closest?.('[data-char-idx]');
+      const endSpan = endNode?.closest?.('[data-char-idx]');
+
+      if (startSpan && endSpan && startSpan.dataset.elid === endSpan.dataset.elid) {
+        const elId = startSpan.dataset.elid;
+        const sIdx = parseInt(startSpan.dataset.charIdx, 10);
+        const eIdx = parseInt(endSpan.dataset.charIdx, 10);
+        if (!isNaN(sIdx) && !isNaN(eIdx)) {
+          const rect = range.getBoundingClientRect();
+          setCharSelection({
+            elId,
+            startIdx: Math.min(sIdx, eIdx),
+            endIdx: Math.max(sIdx, eIdx),
+            rect: {
+              left: rect.left,
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+              width: rect.width,
+              height: rect.height,
+            },
+          });
+          setSelectedId(elId);
+        }
+      }
+    };
+
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => document.removeEventListener('selectionchange', onSelectionChange);
+  }, []);
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
   useEffect(() => {
@@ -678,6 +780,8 @@ export default function Canvas({ page }) {
       const height = el.height || 180;
       const lines = (el.text || '').split('\n');
       const erasedSet = new Set(el.erasedIndices || []);
+      const charColors = el.charColors || {};
+      const charStyles = el.charStyles || {};
       let cumulativeCharIndex = 0;
 
       return (
@@ -701,10 +805,11 @@ export default function Canvas({ page }) {
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
                 width: `${width}px`,
-                userSelect: 'none',
+                userSelect: tool === 'select' ? 'text' : 'none',
+                WebkitUserSelect: tool === 'select' ? 'text' : 'none',
                 padding: '4px',
                 pointerEvents: 'auto',
-                cursor: tool === 'eraser' ? 'crosshair' : tool === 'select' ? 'move' : undefined,
+                cursor: tool === 'eraser' ? 'crosshair' : tool === 'select' ? 'text' : undefined,
               }}
             >
               {lines.map((line, lineIdx) => {
@@ -723,6 +828,9 @@ export default function Canvas({ page }) {
                       line.split('').map((char, cIdx) => {
                         const absIdx = lineStartCharIdx + cIdx;
                         const isErased = erasedSet.has(absIdx);
+                        const cColor = charColors[absIdx] || el.color || '#111111';
+                        const cStyle = charStyles[absIdx] || {};
+
                         return (
                           <span
                             key={cIdx}
@@ -732,7 +840,13 @@ export default function Canvas({ page }) {
                               display: 'inline-block',
                               whiteSpace: 'pre',
                               visibility: isErased ? 'hidden' : 'visible',
-                              userSelect: 'none',
+                              color: cColor,
+                              fontWeight: cStyle.bold ? 'bold' : undefined,
+                              fontStyle: cStyle.italic ? 'italic' : undefined,
+                              textDecoration: cStyle.underline ? 'underline' : undefined,
+                              backgroundColor: cStyle.highlight || undefined,
+                              borderRadius: cStyle.highlight ? '2px' : undefined,
+                              userSelect: tool === 'select' ? 'text' : 'none',
                             }}
                           >
                             {char}
@@ -1025,12 +1139,123 @@ export default function Canvas({ page }) {
         );
       })()}
 
+      {/* ── Floating Character Formatting Toolbar ── */}
+      {charSelection && (() => {
+        const { rect } = charSelection;
+        const containerRect = wrapRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
+        const floatingX = rect.left - containerRect.left + rect.width / 2;
+        const floatingY = rect.top - containerRect.top - 48;
+
+        return (
+          <div
+            data-toolbar="true"
+            className="absolute z-40 flex items-center gap-1.5 p-1.5 bg-card/95 text-card-foreground border border-border shadow-2xl rounded-2xl backdrop-blur-xl -translate-x-1/2 select-none animate-in fade-in zoom-in-95 duration-150"
+            style={{
+              left: Math.max(160, Math.min(window.innerWidth - 200, floatingX)),
+              top: Math.max(16, floatingY),
+            }}
+          >
+            {/* Colors */}
+            <div className="flex items-center gap-1 px-1">
+              {['#111111', '#FF331F', '#0033FF', '#00C853', '#FFD600', '#AA00FF', '#FF7A00'].map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  title={`Color: ${c}`}
+                  onClick={() => applyCharStyle({ color: c })}
+                  className="w-5 h-5 rounded-full border border-border/50 hover:scale-125 transition-transform shadow-sm"
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+              <label
+                className="w-5 h-5 rounded-full border border-dashed border-border flex items-center justify-center cursor-pointer hover:scale-125 transition-transform"
+                title="Custom color"
+              >
+                <Palette className="w-3 h-3 text-muted-foreground" />
+                <input
+                  type="color"
+                  onChange={(e) => applyCharStyle({ color: e.target.value })}
+                  className="w-0 h-0 opacity-0 absolute"
+                />
+              </label>
+            </div>
+
+            <div className="w-px h-4 bg-border mx-0.5" />
+
+            {/* Bold */}
+            <button
+              type="button"
+              title="Toggle Bold"
+              onClick={() => {
+                const el = elements.find(e => e && e.id === charSelection.elId);
+                const currentBold = el?.charStyles?.[charSelection.startIdx]?.bold;
+                applyCharStyle({ bold: !currentBold });
+              }}
+              className="p-1 rounded-lg hover:bg-muted font-bold text-xs w-6 h-6 flex items-center justify-center transition-colors"
+            >
+              <Bold className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Italic */}
+            <button
+              type="button"
+              title="Toggle Italic"
+              onClick={() => {
+                const el = elements.find(e => e && e.id === charSelection.elId);
+                const currentItalic = el?.charStyles?.[charSelection.startIdx]?.italic;
+                applyCharStyle({ italic: !currentItalic });
+              }}
+              className="p-1 rounded-lg hover:bg-muted italic text-xs w-6 h-6 flex items-center justify-center transition-colors"
+            >
+              <Italic className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Highlight */}
+            <button
+              type="button"
+              title="Yellow Highlight"
+              onClick={() => {
+                const el = elements.find(e => e && e.id === charSelection.elId);
+                const currentHighlight = el?.charStyles?.[charSelection.startIdx]?.highlight;
+                applyCharStyle({ highlight: currentHighlight ? null : 'rgba(255, 214, 0, 0.35)' });
+              }}
+              className="p-1 rounded-lg hover:bg-muted text-xs w-6 h-6 flex items-center justify-center transition-colors text-amber-500"
+            >
+              <Highlighter className="w-3.5 h-3.5" />
+            </button>
+
+            <div className="w-px h-4 bg-border mx-0.5" />
+
+            {/* Delete Selection */}
+            <button
+              type="button"
+              title="Delete selected characters"
+              onClick={deleteSelectedChars}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Erase</span>
+            </button>
+
+            {/* Close / Deselect */}
+            <button
+              type="button"
+              title="Deselect"
+              onClick={() => setCharSelection(null)}
+              className="p-1 rounded-lg hover:bg-muted text-muted-foreground transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        );
+      })()}
+
       {/* ── Toolbar (data-toolbar attr prevents pointer-down from triggering canvas) ── */}
       <div data-toolbar="true">
         <CanvasToolbar
           tool={tool}               setTool={setTool}
           penType={penType}         setPenType={setPenType}
-          color={color}             setColor={setColor}
+          color={color}             setColor={handleColorChange}
           stroke={stroke}           setStroke={setStroke}
           stickyColor={stickyColor} setStickyColor={setStickyColor}
           onUndo={undo}             onRedo={redo}
