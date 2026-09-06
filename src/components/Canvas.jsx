@@ -548,14 +548,21 @@ export default function Canvas({ page }) {
         }
         setSelectedId(elId);
 
-        setElements(prev => {
-          const el = prev.find(q => q && q.id === elId);
-          if (el) {
-            dragRef.current = { id: elId, startX: x, startY: y, orig: JSON.parse(JSON.stringify(el)) };
-          }
-          return prev;
-        });
-        e.currentTarget.setPointerCapture(e.pointerId);
+        const isCharSpan = Boolean(
+          e.target.closest('[data-char-idx]') ||
+          e.target.closest('.canvas-char-span')
+        );
+
+        if (!isCharSpan) {
+          setElements(prev => {
+            const el = prev.find(q => q && q.id === elId);
+            if (el) {
+              dragRef.current = { id: elId, startX: x, startY: y, orig: JSON.parse(JSON.stringify(el)) };
+            }
+            return prev;
+          });
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }
       } else {
         setSelectedId(null);
         setCharSelection(null);
@@ -738,55 +745,60 @@ export default function Canvas({ page }) {
     if (laserActiveRef.current) laserActiveRef.current = false;
   }, []);
 
-  // ── Element renderer ─────────────────────────────────────────────────────
+  // ── Render element helpers ────────────────────────────────────────────────
   const renderElement = useCallback((el, isDraft = false) => {
     if (!el) return null;
+    const key = isDraft ? `draft-${el.id || 'draft'}` : el.id;
+    const isSelected = selectedId === el.id;
 
-    // Hide the element while editing so it doesn't double-render with the input overlay
-    if (!isDraft && el.id === editingId) return null;
-
-    const key = isDraft ? `draft-${el.id}` : el.id;
-    const isSelected = !isDraft && el.id === selectedId;
-
-    const interactProps = isDraft ? {} : {
+    // Common interact props
+    const interactProps = {
       'data-elid': el.id,
-      style: { cursor: tool === 'select' ? 'move' : tool === 'eraser' ? 'crosshair' : undefined },
+      style: { cursor: tool === 'eraser' ? 'crosshair' : (tool === 'select' || tool === 'text') ? 'pointer' : 'default' },
     };
 
     if (el.type === 'pen') {
       const outline = strokeOutline(el.points, el.penType || 'normal', el.strokeWidth || 2);
-      const d = outlineToPath(outline);
-      if (!d) return null;
-      const blend = el.penType === 'highlighter' ? { mixBlendMode: 'multiply' } : {};
+      const pathD   = outlineToPath(outline);
       return (
         <path
           key={key}
           {...interactProps}
-          style={{ ...(interactProps.style || {}), ...blend }}
-          d={d}
-          fill={el.color || '#000'}
+          d={pathD}
+          fill={el.color}
           opacity={el.opacity ?? 1}
         />
       );
     }
 
     if (el.type === 'rect') {
+      const rx = Math.min(el.x, el.x + el.w);
+      const ry = Math.min(el.y, el.y + el.h);
+      const rw = Math.abs(el.w);
+      const rh = Math.abs(el.h);
       return (
-        <rect key={key} {...interactProps}
-          x={el.x} y={el.y} width={Math.abs(el.w)} height={Math.abs(el.h)}
-          rx={el.radius || 0}
-          stroke={el.color} strokeWidth={el.strokeWidth}
+        <rect
+          key={key}
+          {...interactProps}
+          x={rx} y={ry} width={rw} height={rh}
+          stroke={el.color} strokeWidth={el.strokeWidth || 2}
           fill={el.fill || 'transparent'}
+          rx={el.radius || 8}
         />
       );
     }
 
     if (el.type === 'ellipse') {
+      const cx = el.x + el.w / 2;
+      const cy = el.y + el.h / 2;
+      const rx = Math.abs(el.w / 2);
+      const ry = Math.abs(el.h / 2);
       return (
-        <ellipse key={key} {...interactProps}
-          cx={el.x + el.w / 2} cy={el.y + el.h / 2}
-          rx={Math.abs(el.w) / 2} ry={Math.abs(el.h) / 2}
-          stroke={el.color} strokeWidth={el.strokeWidth}
+        <ellipse
+          key={key}
+          {...interactProps}
+          cx={cx} cy={cy} rx={rx} ry={ry}
+          stroke={el.color} strokeWidth={el.strokeWidth || 2}
           fill={el.fill || 'transparent'}
         />
       );
@@ -794,28 +806,29 @@ export default function Canvas({ page }) {
 
     if (el.type === 'line') {
       return (
-        <line key={key} {...interactProps}
+        <line
+          key={key}
+          {...interactProps}
           x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2}
-          stroke={el.color} strokeWidth={el.strokeWidth}
+          stroke={el.color} strokeWidth={el.strokeWidth || 2}
           strokeLinecap="round"
         />
       );
     }
 
     if (el.type === 'arrow') {
-      const markerId = `arrow-${el.id}`;
+      const angle = Math.atan2(el.y2 - el.y1, el.x2 - el.x1);
+      const headLen = 14 + (el.strokeWidth || 2) * 2;
+      const a1x = el.x2 - headLen * Math.cos(angle - Math.PI / 6);
+      const a1y = el.y2 - headLen * Math.sin(angle - Math.PI / 6);
+      const a2x = el.x2 - headLen * Math.cos(angle + Math.PI / 6);
+      const a2y = el.y2 - headLen * Math.sin(angle + Math.PI / 6);
       return (
         <g key={key} {...interactProps}>
-          <defs>
-            <marker id={markerId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill={el.color} />
-            </marker>
-          </defs>
-          <line
-            x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2}
-            stroke={el.color} strokeWidth={el.strokeWidth}
-            strokeLinecap="round"
-            markerEnd={`url(#${markerId})`}
+          <line x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2} stroke={el.color} strokeWidth={el.strokeWidth || 2} strokeLinecap="round" />
+          <polygon
+            points={`${el.x2},${el.y2} ${a1x},${a1y} ${a2x},${a2y}`}
+            fill={el.color}
           />
         </g>
       );
@@ -860,12 +873,12 @@ export default function Canvas({ page }) {
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
                 width: `${width}px`,
-                userSelect: tool === 'text' ? 'text' : 'none',
-                WebkitUserSelect: tool === 'text' ? 'text' : 'none',
-                touchAction: 'none',
+                userSelect: 'text',
+                WebkitUserSelect: 'text',
+                touchAction: 'auto',
                 padding: '4px',
                 pointerEvents: 'auto',
-                cursor: tool === 'eraser' ? 'crosshair' : tool === 'text' ? 'text' : undefined,
+                cursor: tool === 'eraser' ? 'crosshair' : 'text',
               }}
             >
               {lines.map((line, lineIdx) => {
@@ -901,9 +914,9 @@ export default function Canvas({ page }) {
                               textDecoration: cStyle.underline ? 'underline' : undefined,
                               backgroundColor: cStyle.highlight || undefined,
                               borderRadius: cStyle.highlight ? '3px' : undefined,
-                              userSelect: tool === 'text' ? 'text' : 'none',
-                              WebkitUserSelect: tool === 'text' ? 'text' : 'none',
-                              cursor: tool === 'text' ? 'text' : undefined,
+                              userSelect: 'text',
+                              WebkitUserSelect: 'text',
+                              cursor: 'text',
                             }}
                           >
                             {char}
@@ -936,9 +949,9 @@ export default function Canvas({ page }) {
               style={{
                 fontFamily: 'Caveat, cursive', fontSize: 20, lineHeight: 1.3,
                 color: '#111', whiteSpace: 'pre-wrap', overflow: 'hidden', height: '100%',
-                userSelect: tool === 'text' ? 'text' : 'none',
-                WebkitUserSelect: tool === 'text' ? 'text' : 'none',
-                cursor: tool === 'text' ? 'text' : undefined,
+                userSelect: 'text',
+                WebkitUserSelect: 'text',
+                cursor: 'text',
                 pointerEvents: (tool === 'select' || tool === 'text') ? 'auto' : 'none',
               }}
             >
@@ -983,12 +996,12 @@ export default function Canvas({ page }) {
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
                 width: `${width}px`,
-                userSelect: tool === 'text' ? 'text' : 'none',
-                WebkitUserSelect: tool === 'text' ? 'text' : 'none',
-                touchAction: 'none',
+                userSelect: 'text',
+                WebkitUserSelect: 'text',
+                touchAction: 'auto',
                 padding: '4px',
                 pointerEvents: 'auto',
-                cursor: tool === 'eraser' ? 'crosshair' : tool === 'text' ? 'text' : undefined,
+                cursor: tool === 'eraser' ? 'crosshair' : 'text',
               }}
             >
               {lines.map((line, lineIdx) => {
@@ -1024,9 +1037,9 @@ export default function Canvas({ page }) {
                               textDecoration: cStyle.underline ? 'underline' : undefined,
                               backgroundColor: cStyle.highlight || undefined,
                               borderRadius: cStyle.highlight ? '3px' : undefined,
-                              userSelect: tool === 'text' ? 'text' : 'none',
-                              WebkitUserSelect: tool === 'text' ? 'text' : 'none',
-                              cursor: tool === 'text' ? 'text' : undefined,
+                              userSelect: 'text',
+                              WebkitUserSelect: 'text',
+                              cursor: 'text',
                             }}
                           >
                             {char}
@@ -1042,6 +1055,7 @@ export default function Canvas({ page }) {
         </g>
       );
     }
+
 
 
     if (el.type === 'image') {

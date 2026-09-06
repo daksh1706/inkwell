@@ -204,6 +204,16 @@
   .no-select { user-select: none; -webkit-user-select: none; }
   .select-text { user-select: text; -webkit-user-select: text; }
 
+  .canvas-text-block,
+  .canvas-text-block *,
+  .handwriting-text-block,
+  .handwriting-text-block *,
+  .canvas-sticky-text,
+  .canvas-sticky-text * {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
   ::selection {
     background: rgba(255, 51, 31, 0.22);
     color: inherit;
@@ -232,6 +242,7 @@
     transition: background-color 0.1s ease, color 0.1s ease;
   }
 }
+
 
 /* Laser pointer glow animation */
 @keyframes laser-pulse {
