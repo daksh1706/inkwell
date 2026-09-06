@@ -44,6 +44,8 @@ export default function Canvas({ page }) {
   const [elements,    setElements]    = useState(() => (page.canvas?.elements || []).filter(Boolean));
   const [draft,       setDraft]       = useState(null);
   const [selectedId,  setSelectedId]  = useState(null);
+  const [editingId,   setEditingId]   = useState(null);
+  const [editText,    setEditText]    = useState('');
   const [charSelection, setCharSelection] = useState(null);
   const lastCharSelectionRef = useRef(null);
   const elementsRef = useRef(elements);
