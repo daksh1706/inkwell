@@ -252,6 +252,73 @@ export default function Canvas({ page }) {
 
   useEffect(() => () => { if (laserRaf.current) cancelAnimationFrame(laserRaf.current); }, []);
 
+  // ── Character & Object Level Eraser ───────────────────────────────────────
+  const eraseAtPoint = useCallback((clientX, clientY) => {
+    const elem = document.elementFromPoint(clientX, clientY);
+    if (!elem) return;
+
+    // 1. Check if we hit a character inside a handwriting element
+    const charNode = elem.closest('[data-char-idx]');
+    if (charNode) {
+      const elId = charNode.dataset.elid;
+      const charIdx = parseInt(charNode.dataset.charIdx, 10);
+      if (!isNaN(charIdx) && elId) {
+        setElements(prev => {
+          return prev.map(el => {
+            if (el && el.id === elId && el.type === 'handwriting') {
+              const text = el.text || '';
+              if (charIdx >= 0 && charIdx < text.length) {
+                const newText = text.slice(0, charIdx) + text.slice(charIdx + 1);
+                if (newText.trim() === '') return null;
+                return { ...el, text: newText };
+              }
+            }
+            return el;
+          }).filter(Boolean);
+        });
+        return;
+      }
+    }
+
+    // 2. Check if we hit a line inside a handwriting element
+    const lineNode = elem.closest('[data-line-idx]');
+    if (lineNode && lineNode.dataset.elid) {
+      const elId = lineNode.dataset.elid;
+      const lineIdx = parseInt(lineNode.dataset.lineIdx, 10);
+      if (!isNaN(lineIdx)) {
+        setElements(prev => {
+          return prev.map(el => {
+            if (el && el.id === elId && el.type === 'handwriting') {
+              const lines = (el.text || '').split('\n');
+              if (lineIdx >= 0 && lineIdx < lines.length) {
+                // Erase the line
+                lines.splice(lineIdx, 1);
+                const newText = lines.join('\n');
+                if (newText.trim() === '') return null;
+                return { ...el, text: newText };
+              }
+            }
+            return el;
+          }).filter(Boolean);
+        });
+        return;
+      }
+    }
+
+    // 3. Fallback for other canvas objects (strokes, shapes, stickies, images)
+    const elNode = elem.closest('[data-elid]');
+    const elId = elNode?.dataset?.elid;
+    if (elId) {
+      setElements(prev => {
+        const targetEl = prev.find(el => el && el.id === elId);
+        if (targetEl && targetEl.type === 'handwriting') {
+          return prev; // Don't wipe the whole handwriting block unless it's empty
+        }
+        return prev.filter(el => el && el.id !== elId);
+      });
+    }
+  }, []);
+
   // ── Pointer down ─────────────────────────────────────────────────────────
   const onPointerDown = useCallback((e) => {
     if (e.button !== 0) return;
@@ -311,17 +378,11 @@ export default function Canvas({ page }) {
       return;
     }
 
-    // Eraser — erase on click and activate drag-erase
+    // Eraser — erase character or element on click and activate drag-erase
     if (currentTool === 'eraser') {
       eraserActiveRef.current = true;
       e.currentTarget.setPointerCapture(e.pointerId);
-      if (elId) {
-        setElements(prev => {
-          const next = prev.filter(el => el && el.id !== elId);
-          snapshot(next);
-          return next;
-        });
-      }
+      eraseAtPoint(e.clientX, e.clientY);
       return;
     }
 
@@ -395,17 +456,9 @@ export default function Canvas({ page }) {
       return;
     }
 
-    // Eraser drag — erase whatever we move over
+    // Eraser drag — erase whatever character or element we move over
     if (tool === 'eraser' && eraserActiveRef.current) {
-      const elNode = e.target?.closest('[data-elid]');
-      const elId   = elNode?.dataset?.elid;
-      if (elId) {
-        setElements(prev => {
-          if (!prev.find(el => el && el.id === elId)) return prev; // already erased
-          const next = prev.filter(el => el && el.id !== elId);
-          return next; // snapshot on pointer-up
-        });
-      }
+      eraseAtPoint(e.clientX, e.clientY);
       return;
     }
 
@@ -611,6 +664,9 @@ export default function Canvas({ page }) {
       const fontFam = el.fontFamily || 'Caveat';
       const width = el.maxWidth || el.width || 400;
       const height = el.height || 180;
+      const lines = (el.text || '').split('\n');
+      let cumulativeCharIndex = 0;
+
       return (
         <g key={key} {...interactProps}>
           <foreignObject
@@ -622,6 +678,7 @@ export default function Canvas({ page }) {
           >
             <div
               xmlns="http://www.w3.org/1999/xhtml"
+              data-elid={el.id}
               style={{
                 fontFamily: `"${fontFam}", cursive, sans-serif`,
                 fontSize: `${el.fontSize || 28}px`,
@@ -632,11 +689,41 @@ export default function Canvas({ page }) {
                 wordBreak: 'break-word',
                 width: `${width}px`,
                 userSelect: 'none',
-                pointerEvents: 'none',
                 padding: '4px',
+                pointerEvents: 'auto',
+                cursor: tool === 'eraser' ? 'crosshair' : tool === 'select' ? 'move' : undefined,
               }}
             >
-              {el.text}
+              {lines.map((line, lineIdx) => {
+                const lineStartCharIdx = cumulativeCharIndex;
+                cumulativeCharIndex += line.length + 1; // account for newline
+                return (
+                  <div
+                    key={lineIdx}
+                    data-elid={el.id}
+                    data-line-idx={lineIdx}
+                    style={{ minHeight: '1.2em' }}
+                  >
+                    {line.length === 0 ? (
+                      <span data-elid={el.id} data-char-idx={lineStartCharIdx}>&nbsp;</span>
+                    ) : (
+                      line.split('').map((char, cIdx) => (
+                        <span
+                          key={cIdx}
+                          data-elid={el.id}
+                          data-char-idx={lineStartCharIdx + cIdx}
+                          style={{
+                            display: 'inline-block',
+                            whiteSpace: 'pre',
+                          }}
+                        >
+                          {char}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </foreignObject>
         </g>
