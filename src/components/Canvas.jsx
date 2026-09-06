@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { actions, uid } from '@/lib/store';
 import CanvasToolbar from '@/components/CanvasToolbar';
 import { getStroke } from 'perfect-freehand';
+import { Trash2 } from 'lucide-react';
 
 const SHAPE_TOOLS = ['rect', 'ellipse', 'line', 'arrow'];
 const LASER_DECAY = 900; // ms
@@ -115,6 +116,24 @@ export default function Canvas({ page }) {
     forceUpdate(n => n + 1);
   }, []);
 
+  // ── Listen for externally added canvas elements (e.g. from Notes convert) ─
+  useEffect(() => {
+    const onAddElement = (e) => {
+      if (e.detail && e.detail.pageId === page.id && e.detail.element) {
+        const newEl = e.detail.element;
+        setElements(prev => {
+          const next = [...prev.filter(el => el && el.id !== newEl.id), newEl];
+          snapshot(next);
+          return next;
+        });
+        setSelectedId(newEl.id);
+        setTool('select');
+      }
+    };
+    window.addEventListener('inkwell:add-canvas-element', onAddElement);
+    return () => window.removeEventListener('inkwell:add-canvas-element', onAddElement);
+  }, [page.id, snapshot]);
+
   const undo = useCallback(() => {
     const i = hIdxRef.current;
     if (i > 0) {
@@ -133,6 +152,16 @@ export default function Canvas({ page }) {
       forceUpdate(n => n + 1);
     }
   }, []);
+
+  const deleteSelected = useCallback(() => {
+    if (!selectedId) return;
+    setElements(prev => {
+      const next = prev.filter(el => el && el.id !== selectedId);
+      snapshot(next);
+      return next;
+    });
+    setSelectedId(null);
+  }, [selectedId, snapshot]);
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
   useEffect(() => {
@@ -260,7 +289,7 @@ export default function Canvas({ page }) {
       if (elId) {
         if (e.detail === 2) {
           const el = elements.find(q => q && q.id === elId);
-          if (el && (el.type === 'text' || el.type === 'sticky')) {
+          if (el && (el.type === 'text' || el.type === 'sticky' || el.type === 'handwriting')) {
             setEditingId(el.id);
             setEditText(el.text || '');
             setSelectedId(el.id);
@@ -387,7 +416,7 @@ export default function Canvas({ page }) {
       const orig = dragRef.current.orig;
       setElements(prev => prev.map(el => {
         if (!el || el.id !== dragRef.current?.id) return el;
-        if (['rect', 'ellipse', 'sticky', 'text'].includes(el.type)) return { ...el, x: orig.x + dx, y: orig.y + dy };
+        if (['rect', 'ellipse', 'sticky', 'text', 'handwriting', 'image'].includes(el.type)) return { ...el, x: orig.x + dx, y: orig.y + dy };
         if (['line', 'arrow'].includes(el.type)) return { ...el, x1: orig.x1 + dx, y1: orig.y1 + dy, x2: orig.x2 + dx, y2: orig.y2 + dy };
         if (el.type === 'pen') return { ...el, points: orig.points.map(([px, py]) => [px + dx, py + dy]) };
         return el;
@@ -578,6 +607,57 @@ export default function Canvas({ page }) {
       );
     }
 
+    if (el.type === 'handwriting') {
+      const fontFam = el.fontFamily || 'Caveat';
+      const width = el.maxWidth || el.width || 400;
+      const height = el.height || 180;
+      return (
+        <g key={key} {...interactProps}>
+          <foreignObject
+            x={el.x}
+            y={el.y}
+            width={width + 30}
+            height={height + 40}
+            style={{ overflow: 'visible' }}
+          >
+            <div
+              xmlns="http://www.w3.org/1999/xhtml"
+              style={{
+                fontFamily: `"${fontFam}", cursive, sans-serif`,
+                fontSize: `${el.fontSize || 28}px`,
+                lineHeight: 1.35,
+                color: el.color || '#111111',
+                textAlign: el.align || 'left',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                width: `${width}px`,
+                userSelect: 'none',
+                pointerEvents: 'none',
+                padding: '4px',
+              }}
+            >
+              {el.text}
+            </div>
+          </foreignObject>
+        </g>
+      );
+    }
+
+    if (el.type === 'image') {
+      return (
+        <image
+          key={key}
+          {...interactProps}
+          href={el.dataURL}
+          x={el.x}
+          y={el.y}
+          width={el.w}
+          height={el.h}
+          style={{ userSelect: 'none', ...(interactProps.style || {}) }}
+        />
+      );
+    }
+
     return null;
   }, [tool, selectedId]);
 
@@ -593,6 +673,8 @@ export default function Canvas({ page }) {
       bbox = { x: minX, y: minY, w: Math.abs(el.x2 - el.x1), h: Math.abs(el.y2 - el.y1) };
     }
     else if (el.type === 'text') bbox = { x: el.x - 2, y: el.y, w: (el.text?.length || 1) * (el.fontSize || 18) * 0.55, h: (el.fontSize || 18) + 8 };
+    else if (el.type === 'handwriting') bbox = { x: el.x - 4, y: el.y - 4, w: (el.maxWidth || el.width || 300) + 16, h: (el.height || 100) + 20 };
+    else if (el.type === 'image') bbox = { x: el.x - 2, y: el.y - 2, w: (el.w || 200) + 4, h: (el.h || 150) + 4 };
     else if (el.type === 'pen') {
       const xs = el.points.map(p => p[0]), ys = el.points.map(p => p[1]);
       bbox = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
@@ -756,7 +838,85 @@ export default function Canvas({ page }) {
             />
           );
         }
+
+        if (el.type === 'handwriting') {
+          return (
+            <textarea
+              ref={editorRef}
+              key={`editor-${el.id}`}
+              autoFocus
+              value={editText}
+              onChange={e => setEditText(e.target.value)}
+              onBlur={() => {
+                setElements(prev => {
+                  const next = prev.map(q => q && q.id === el.id ? { ...q, text: editText || 'Handwriting' } : q);
+                  snapshot(next);
+                  return next;
+                });
+                setEditingId(null);
+              }}
+              onKeyDown={e => { if (e.key === 'Escape') setEditingId(null); }}
+              className="absolute resize-none outline-none p-2 rounded-xl bg-background/95 backdrop-blur-md border border-amber-500 shadow-xl"
+              style={{
+                left: sx,
+                top: sy,
+                width: ((el.maxWidth || el.width || 400) + 16) * transform.scale,
+                minHeight: ((el.height || 100) + 20) * transform.scale,
+                color: el.color || '#111111',
+                fontFamily: `"${el.fontFamily || 'Caveat'}", cursive, sans-serif`,
+                fontSize: (el.fontSize || 28) * transform.scale,
+                lineHeight: 1.35,
+                textAlign: el.align || 'left',
+                userSelect: 'text',
+                WebkitUserSelect: 'text',
+              }}
+            />
+          );
+        }
         return null;
+      })()}
+
+      {/* ── Floating context action bar for selected element ── */}
+      {selectedId && (() => {
+        const el = elements.find(e => e && e.id === selectedId);
+        if (!el) return null;
+        let bbox;
+        if (['rect', 'ellipse', 'sticky'].includes(el.type)) bbox = { x: el.x, y: el.y, w: Math.abs(el.w), h: Math.abs(el.h) };
+        else if (['line', 'arrow'].includes(el.type)) bbox = { x: Math.min(el.x1, el.x2), y: Math.min(el.y1, el.y2), w: Math.abs(el.x2 - el.x1), h: Math.abs(el.y2 - el.y1) };
+        else if (el.type === 'text') bbox = { x: el.x - 2, y: el.y, w: (el.text?.length || 1) * (el.fontSize || 18) * 0.55, h: (el.fontSize || 18) + 8 };
+        else if (el.type === 'handwriting') bbox = { x: el.x - 4, y: el.y - 4, w: (el.maxWidth || el.width || 300) + 16, h: (el.height || 100) + 20 };
+        else if (el.type === 'image') bbox = { x: el.x - 2, y: el.y - 2, w: (el.w || 200) + 4, h: (el.h || 150) + 4 };
+        else if (el.type === 'pen') {
+          const xs = el.points.map(p => p[0]), ys = el.points.map(p => p[1]);
+          bbox = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+        }
+        if (!bbox) return null;
+
+        const sx = (bbox.x + bbox.w / 2) * transform.scale + transform.x;
+        const sy = bbox.y * transform.scale + transform.y - 40;
+
+        return (
+          <div
+            data-toolbar="true"
+            className="absolute z-30 flex items-center gap-1.5 px-2.5 py-1 bg-card/95 text-card-foreground border border-border shadow-xl rounded-xl backdrop-blur-md -translate-x-1/2 select-none"
+            style={{ left: Math.max(90, sx), top: Math.max(16, sy) }}
+          >
+            <span className="text-[10px] font-mono uppercase font-semibold text-muted-foreground">
+              {el.type === 'handwriting' ? 'Handwriting' : el.type}
+            </span>
+            <div className="w-px h-3.5 bg-border mx-0.5" />
+            <button
+              type="button"
+              data-testid="selection-delete-btn"
+              title="Delete selected item (Del / Backspace)"
+              onClick={deleteSelected}
+              className="flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-destructive" />
+              <span>Delete</span>
+            </button>
+          </div>
+        );
       })()}
 
       {/* ── Toolbar (data-toolbar attr prevents pointer-down from triggering canvas) ── */}
@@ -773,6 +933,8 @@ export default function Canvas({ page }) {
           onZoomOut={()   => setTransform(t => ({ ...t, scale: Math.max(0.05, t.scale / 1.2) }))}
           onZoomReset={() => setTransform({ x: 0, y: 0, scale: 1 })}
           zoom={transform.scale}
+          onDeleteSelected={deleteSelected}
+          selectedElement={elements.find(e => e && e.id === selectedId)}
           onClear={() => {
             if (window.confirm('Clear all elements on this page?')) {
               setElements([]);

@@ -374,4 +374,36 @@ export const actions = {
       })),
     })),
   })),
+
+  addCanvasElement: (pageId, element) => {
+    const elWithId = { id: uid(), ...element };
+    setState((s) => ({
+      ...s,
+      notebooks: s.notebooks.map((n) => ({
+        ...n,
+        sections: n.sections.map((sec) => ({
+          ...sec,
+          pages: sec.pages.map((p) => {
+            if (p.id !== pageId) return p;
+            const currentElements = p.canvas?.elements || [];
+            return {
+              ...p,
+              canvas: {
+                ...(p.canvas || {}),
+                elements: [...currentElements, elWithId],
+              },
+              updated: Date.now(),
+            };
+          }),
+        })),
+      })),
+    }));
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('inkwell:add-canvas-element', {
+        detail: { pageId, element: elWithId },
+      }));
+    }
+    return elWithId;
+  },
 };

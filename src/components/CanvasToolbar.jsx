@@ -38,6 +38,7 @@ export default function CanvasToolbar({
   stickyColor, setStickyColor,
   onUndo, onRedo, canUndo, canRedo,
   onZoomIn, onZoomOut, onZoomReset, zoom, onClear,
+  onDeleteSelected, selectedElement,
 }) {
   const [propsOpen, setPropsOpen] = useState(true);
 
@@ -203,6 +204,19 @@ export default function CanvasToolbar({
         </button>
         <button data-testid="canvas-zoom-in"    title="Zoom in"                onClick={onZoomIn}    className="tool-btn"><ZoomIn    className="w-4 h-4" /></button>
         <button data-testid="canvas-fit"        title="Reset view"             onClick={onZoomReset}  className="tool-btn"><Maximize2 className="w-4 h-4" /></button>
+        {selectedElement && (
+          <>
+            <div className="w-px h-5 bg-border mx-1" />
+            <button
+              data-testid="canvas-delete-selected"
+              title="Delete selected item (Delete / Backspace)"
+              onClick={onDeleteSelected}
+              className="tool-btn text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              <Trash2 className="w-4 h-4 text-destructive" />
+            </button>
+          </>
+        )}
         <div className="w-px h-5 bg-border mx-1" />
         <button data-testid="canvas-clear"      title="Clear page"             onClick={onClear}      className="tool-btn hover:text-destructive"><Trash2 className="w-4 h-4" /></button>
       </div>
