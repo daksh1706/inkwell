@@ -51,30 +51,34 @@ const LITERALS = new Set([
 ]);
 
 /**
- * Checks if a block of text strongly resembles code
+ * Checks if a block of text strongly resembles actual code (strict structural detection)
  */
 export function isLikelyCode(text) {
   if (!text || typeof text !== 'string') return false;
   const trimmed = text.trim();
-  if (trimmed.length < 4) return false;
+  if (trimmed.length < 6) return false;
 
-  // Code indicators
-  const indicators = [
-    /\b(class|public|private|protected|function|def|const|let|var|return|import|export|if|for|while|struct|interface)\b/,
-    /[{};]\s*$/,
+  // Strong structural code indicators
+  const strongIndicators = [
+    /^\s*(class|interface|struct|enum)\s+[A-Za-z0-9_$]+\s*\{/m,
+    /^\s*(public|private|protected|static|final)\s+(static\s+)?(void|[A-Za-z0-9_$<>[\]]+)\s+[A-Za-z0-9_$]+\s*\(/m,
+    /^\s*def\s+[A-Za-z0-9_$]+\s*\([^)]*\)\s*:/m,
+    /^\s*function\s+[A-Za-z0-9_$]*\s*\([^)]*\)\s*\{/m,
+    /^\s*(const|let|var)\s+[A-Za-z0-9_$]+\s*=\s*/m,
+    /^\s*import\s+.*\s+from\s+['"].*['"]/m,
+    /^\s*#include\s+<.*>/m,
+    /^\s*package\s+[a-zA-Z0-9_.]+\s*;/m,
+    /[;{}]\s*$/m,
     /(\w+)\s*\([^)]*\)\s*\{/,
-    /\[\s*\]/,
-    /=>/,
-    /\/\/.+|\/\*[\s\S]*?\*\/|#.+/,
-    /^\s*(class|public|private|def|fn|const|let|import)\s+/m
+    /return\s+[^;.\n]+;/,
   ];
 
   let matches = 0;
-  for (const reg of indicators) {
+  for (const reg of strongIndicators) {
     if (reg.test(trimmed)) matches++;
   }
 
-  return matches >= 1 || trimmed.includes('class ') || trimmed.includes('public ') || trimmed.includes('return ') || trimmed.includes('function ');
+  return matches >= 2 || /^\s*(class|public\s+class|def|function)\s+/m.test(trimmed);
 }
 
 /**

@@ -1416,25 +1416,50 @@ export default function Canvas({ page }) {
           }
         };
 
-        const applyCodeHighlight = () => {
-          const fullText = el.text || '';
-          const { charColors: codeColors, charStyles: codeStyles } = generateSyntaxCharColors(fullText, 'light');
-          setElements(prev => {
-            const next = prev.map(q => {
-              if (q && q.id === el.id) {
-                return {
-                  ...q,
-                  charColors: codeColors,
-                  charStyles: codeStyles,
-                  font: q.type === 'text' ? 'mono' : q.font,
-                  fontFamily: q.type === 'handwriting' ? 'JetBrains Mono' : q.fontFamily,
-                };
-              }
-              return q;
+        const isElementCode = Boolean(el.isCode || (el.charColors && Object.keys(el.charColors).length > 0));
+
+        const toggleCodeHighlight = () => {
+          if (isElementCode) {
+            // Revert back to Normal Text with uniform color
+            setElements(prev => {
+              const next = prev.map(q => {
+                if (q && q.id === el.id) {
+                  return {
+                    ...q,
+                    isCode: false,
+                    charColors: {},
+                    charStyles: {},
+                    font: q.type === 'text' ? 'body' : q.font,
+                    fontFamily: q.type === 'handwriting' ? 'Caveat' : q.fontFamily,
+                  };
+                }
+                return q;
+              });
+              snapshot(next);
+              return next;
             });
-            snapshot(next);
-            return next;
-          });
+          } else {
+            // Apply Code Syntax Highlighting
+            const fullText = el.text || '';
+            const { charColors: codeColors, charStyles: codeStyles } = generateSyntaxCharColors(fullText, 'light');
+            setElements(prev => {
+              const next = prev.map(q => {
+                if (q && q.id === el.id) {
+                  return {
+                    ...q,
+                    isCode: true,
+                    charColors: codeColors,
+                    charStyles: codeStyles,
+                    font: q.type === 'text' ? 'mono' : q.font,
+                    fontFamily: q.type === 'handwriting' ? 'JetBrains Mono' : q.fontFamily,
+                  };
+                }
+                return q;
+              });
+              snapshot(next);
+              return next;
+            });
+          }
         };
 
         return (
@@ -1565,17 +1590,22 @@ export default function Canvas({ page }) {
                   <Highlighter className="w-3.5 h-3.5" />
                 </button>
 
-                {/* Syntax Highlighting */}
+                {/* Syntax Highlighting Toggle */}
                 <button
                   type="button"
-                  title="Apply Code Syntax Highlighting"
-                  onClick={applyCodeHighlight}
-                  className="p-1 rounded-lg hover:bg-muted text-xs w-6 h-6 flex items-center justify-center transition-colors text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"
+                  title={isElementCode ? "Reset to Normal Text (Remove Code Colors)" : "Format as Code (Syntax Colors)"}
+                  onClick={toggleCodeHighlight}
+                  className={`p-1 rounded-lg text-xs w-6 h-6 flex items-center justify-center transition-colors ${
+                    isElementCode
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-blue-600 dark:text-blue-400 hover:bg-blue-500/10'
+                  }`}
                 >
                   <Code className="w-3.5 h-3.5" />
                 </button>
               </>
             )}
+
 
             <div className="w-px h-3.5 bg-border mx-0.5" />
 

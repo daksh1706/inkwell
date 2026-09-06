@@ -7,7 +7,7 @@ import {
   rasterizeHandwritingToImage
 } from '@/lib/handwritingRenderer';
 import { isLikelyCode, generateSyntaxCharColors } from '@/lib/syntaxHighlighter';
-import { AlignLeft, AlignCenter, AlignRight, Sparkles, Wand2, Layers, X, SlidersHorizontal, Code, Check } from 'lucide-react';
+import { AlignLeft, AlignCenter, AlignRight, Sparkles, Wand2, Layers, X, SlidersHorizontal, Code, FileText, Check } from 'lucide-react';
 
 export default function HandwritingModal({
   isOpen,
@@ -17,13 +17,13 @@ export default function HandwritingModal({
   onInsertRasterized,
 }) {
   const [text, setText] = useState(initialText || '');
+  const [contentType, setContentType] = useState('text'); // 'text' (Normal) | 'code' (Syntax)
   const [fontFamily, setFontFamily] = useState('Caveat');
   const [fontSize, setFontSize] = useState(24);
   const [color, setColor] = useState('#111111');
   const [align, setAlign] = useState('left');
   const [maxWidth, setMaxWidth] = useState(540);
-  const [jitter, setJitter] = useState(0.2);
-  const [isCodeMode, setIsCodeMode] = useState(false);
+  const [jitter, setJitter] = useState(0.35);
   const [isLoading, setIsLoading] = useState(false);
   const previewCanvasRef = useRef(null);
 
@@ -32,20 +32,23 @@ export default function HandwritingModal({
       const raw = initialText || '';
       setText(raw);
       const isCode = isLikelyCode(raw);
-      setIsCodeMode(isCode);
       if (isCode) {
+        setContentType('code');
         setFontFamily('JetBrains Mono');
         setJitter(0);
         setFontSize(20);
       } else {
+        setContentType('text');
         setFontFamily('Caveat');
         setJitter(0.35);
-        setFontSize(26);
+        setFontSize(24);
       }
     }
   }, [isOpen, initialText]);
 
-  // Compute character syntax colors & styles if in Code Mode
+  const isCodeMode = contentType === 'code';
+
+  // Compute character syntax colors & styles ONLY if in Code Mode
   const { charColors, charStyles } = useMemo(() => {
     if (!isCodeMode) return { charColors: {}, charStyles: {} };
     return generateSyntaxCharColors(text, 'light');
@@ -103,6 +106,19 @@ export default function HandwritingModal({
 
   if (!isOpen) return null;
 
+  const handleSelectContentType = (type) => {
+    setContentType(type);
+    if (type === 'code') {
+      setFontFamily('JetBrains Mono');
+      setJitter(0);
+      setFontSize(20);
+    } else {
+      setFontFamily('Caveat');
+      setJitter(0.35);
+      setFontSize(24);
+    }
+  };
+
   const handleInsertEditable = async () => {
     await ensureFontLoaded(fontFamily, '600', `${fontSize}px`);
     const offscreen = document.createElement('canvas');
@@ -121,8 +137,8 @@ export default function HandwritingModal({
       height: layout.height,
       jitter: isCodeMode ? 0 : jitter,
       isCode: isCodeMode,
-      charColors,
-      charStyles,
+      charColors: isCodeMode ? charColors : {},
+      charStyles: isCodeMode ? charStyles : {},
     });
     onClose();
   };
@@ -137,8 +153,8 @@ export default function HandwritingModal({
       align,
       maxWidth,
       jitter: isCodeMode ? 0 : jitter,
-      charColors,
-      charStyles,
+      charColors: isCodeMode ? charColors : {},
+      charStyles: isCodeMode ? charStyles : {},
     });
     setIsLoading(false);
     onInsertRasterized?.({
@@ -152,7 +168,7 @@ export default function HandwritingModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-card text-card-foreground border border-border rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-card text-card-foreground border border-border rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh]">
         
         {/* Header */}
         <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-muted/40">
@@ -162,60 +178,75 @@ export default function HandwritingModal({
             </div>
             <div>
               <h3 className="font-display font-semibold text-base">
-                {isCodeMode ? 'Render Code with Syntax Highlighting' : 'Convert Text to Handwriting'}
+                {isCodeMode ? 'Convert Code to Canvas' : 'Convert Text to Handwriting'}
               </h3>
               <p className="text-xs text-muted-foreground">
                 {isCodeMode
-                  ? 'Format keywords, types, and variables with accurate IDE syntax tokens'
-                  : 'Render typed notes into realistic handwritten strokes on canvas'}
+                  ? 'Accurate IDE syntax highlighting with indentation preservation'
+                  : 'Render notes into realistic handwritten strokes on canvas'}
               </p>
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
-            {/* Syntax Mode Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                const nextMode = !isCodeMode;
-                setIsCodeMode(nextMode);
-                if (nextMode) {
-                  setFontFamily('JetBrains Mono');
-                  setJitter(0);
-                  setFontSize(20);
-                } else {
-                  setFontFamily('Caveat');
-                  setJitter(0.35);
-                  setFontSize(26);
-                }
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
-                isCodeMode
-                  ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
-                  : 'bg-background hover:bg-muted text-foreground border-border'
-              }`}
-            >
-              <Code className="w-3.5 h-3.5" />
-              <span>Syntax Colors</span>
-              {isCodeMode && <Check className="w-3 h-3 ml-0.5" />}
-            </button>
-
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Form Controls */}
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
+          
+          {/* Explicit Content Type Question Banner */}
+          <div className="p-3.5 bg-muted/70 dark:bg-muted/40 rounded-xl border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <span>Content Type</span>
+              </span>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {isCodeMode
+                  ? 'Code Snippet: Syntax tokens (keywords, types, literals) colored'
+                  : 'Normal Text: Uniform ink color, natural handwriting drift'}
+              </p>
+            </div>
+
+            <div className="flex items-center bg-background/90 p-1 rounded-xl border border-border shadow-xs self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => handleSelectContentType('text')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  !isCodeMode
+                    ? 'bg-amber-500 text-white shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Normal Text</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectContentType('code')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  isCodeMode
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Code className="w-3.5 h-3.5" />
+                <span>Code Snippet</span>
+                {isCodeMode && <Check className="w-3 h-3 ml-0.5" />}
+              </button>
+            </div>
+          </div>
+
           {/* Text Input */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                {isCodeMode ? 'Code / Text Snippet' : 'Text to Convert'}
+                {isCodeMode ? 'Code Input' : 'Text Input'}
               </label>
               <span className="text-[11px] text-muted-foreground font-mono">
                 {text.split('\n').length} lines · {text.length} chars
@@ -224,10 +255,10 @@ export default function HandwritingModal({
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Paste code or text here (e.g. class Solution { ... })..."
+              placeholder={isCodeMode ? "Paste code here (e.g. class Solution { ... })..." : "Enter or paste normal text to convert..."}
               rows={5}
-              spellCheck={false}
-              className={`w-full text-sm p-3 rounded-xl border border-input bg-background/80 focus:outline-none focus:ring-2 focus:ring-amber-500/30 font-mono leading-relaxed whitespace-pre`}
+              spellCheck={!isCodeMode}
+              className={`w-full text-sm p-3 rounded-xl border border-input bg-background/80 focus:outline-none focus:ring-2 focus:ring-amber-500/30 ${isCodeMode ? 'font-mono' : 'font-sans'} leading-relaxed whitespace-pre`}
             />
           </div>
 
@@ -266,7 +297,7 @@ export default function HandwritingModal({
 
             <div>
               <label className="text-xs font-semibold text-muted-foreground mb-1.5 block uppercase tracking-wider">
-                Base Text Color
+                {isCodeMode ? 'Default Code Color' : 'Ink Color'}
               </label>
               <div className="flex items-center gap-2 mt-1">
                 <input
