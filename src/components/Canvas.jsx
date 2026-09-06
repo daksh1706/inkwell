@@ -44,9 +44,10 @@ export default function Canvas({ page }) {
   const [elements,    setElements]    = useState(() => (page.canvas?.elements || []).filter(Boolean));
   const [draft,       setDraft]       = useState(null);
   const [selectedId,  setSelectedId]  = useState(null);
-  const [editingId,   setEditingId]   = useState(null);
   const [charSelection, setCharSelection] = useState(null);
   const lastCharSelectionRef = useRef(null);
+  const elementsRef = useRef(elements);
+  elementsRef.current = elements;
 
   // ── History ────────────────────────────────────────────────────────────
   const historyRef = useRef([(page.canvas?.elements || []).filter(Boolean)]);
@@ -522,7 +523,8 @@ export default function Canvas({ page }) {
         setSelectedId(elId);
 
         const targetEl = elements.find(q => q && q.id === elId);
-        const isHandwritingCharClick = targetEl?.type === 'handwriting' && (
+        const isHandwritingCharClick = Boolean(
+          targetEl?.type === 'handwriting' ||
           e.target.closest('[data-char-idx]') ||
           e.target.closest('[data-line-idx]') ||
           e.target.closest('.handwriting-text-block')
@@ -602,7 +604,7 @@ export default function Canvas({ page }) {
         e.currentTarget.setPointerCapture(e.pointerId);
       }
     }
-  }, [tool, transform, toCanvas, color, stroke, penType, stickyColor, snapshot, addLaserPoint]);
+  }, [tool, transform, toCanvas, color, stroke, penType, stickyColor, snapshot, addLaserPoint, elements]);
 
   // ── Pointer move ─────────────────────────────────────────────────────────
   const onPointerMove = useCallback((e) => {
@@ -683,6 +685,17 @@ export default function Canvas({ page }) {
     if (dragRef.current) {
       setElements(prev => { snapshot(prev); return prev; });
       dragRef.current = null;
+    }
+
+    if (wrapRef.current && e.pointerId) {
+      try {
+        if (wrapRef.current.hasPointerCapture(e.pointerId)) {
+          wrapRef.current.releasePointerCapture(e.pointerId);
+        }
+      } catch {}
+    }
+
+    if (dragRef.current) {
       return;
     }
 
