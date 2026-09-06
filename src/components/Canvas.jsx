@@ -1149,34 +1149,133 @@ export default function Canvas({ page }) {
         return null;
       })()}
 
-      {/* ── Floating context action bar for selected element ── */}
-      {selectedId && (() => {
-        const el = elements.find(e => e && e.id === selectedId);
+      {/* ── Single Unified Floating Action Bar ── */}
+      {(charSelection || selectedId) && (() => {
+        const targetId = charSelection?.elId || selectedId;
+        const el = elements.find(e => e && e.id === targetId);
         if (!el) return null;
-        let bbox;
-        if (['rect', 'ellipse', 'sticky'].includes(el.type)) bbox = { x: el.x, y: el.y, w: Math.abs(el.w), h: Math.abs(el.h) };
-        else if (['line', 'arrow'].includes(el.type)) bbox = { x: Math.min(el.x1, el.x2), y: Math.min(el.y1, el.y2), w: Math.abs(el.x2 - el.x1), h: Math.abs(el.y2 - el.y1) };
-        else if (el.type === 'text') bbox = { x: el.x - 2, y: el.y, w: (el.text?.length || 1) * (el.fontSize || 18) * 0.55, h: (el.fontSize || 18) + 8 };
-        else if (el.type === 'handwriting') bbox = { x: el.x - 4, y: el.y - 4, w: (el.maxWidth || el.width || 300) + 16, h: (el.height || 100) + 20 };
-        else if (el.type === 'image') bbox = { x: el.x - 2, y: el.y - 2, w: (el.w || 200) + 4, h: (el.h || 150) + 4 };
-        else if (el.type === 'pen') {
-          const xs = el.points.map(p => p[0]), ys = el.points.map(p => p[1]);
-          bbox = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
-        }
-        if (!bbox) return null;
 
-        const sx = (bbox.x + bbox.w / 2) * transform.scale + transform.x;
-        const sy = bbox.y * transform.scale + transform.y - 40;
+        let posX = 0;
+        let posY = 0;
+
+        if (charSelection) {
+          const { rect } = charSelection;
+          const containerRect = wrapRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
+          posX = rect.left - containerRect.left + rect.width / 2;
+          posY = rect.top - containerRect.top - 44;
+        } else {
+          let bbox;
+          if (['rect', 'ellipse', 'sticky'].includes(el.type)) bbox = { x: el.x, y: el.y, w: Math.abs(el.w), h: Math.abs(el.h) };
+          else if (['line', 'arrow'].includes(el.type)) bbox = { x: Math.min(el.x1, el.x2), y: Math.min(el.y1, el.y2), w: Math.abs(el.x2 - el.x1), h: Math.abs(el.y2 - el.y1) };
+          else if (el.type === 'text') bbox = { x: el.x - 2, y: el.y, w: (el.text?.length || 1) * (el.fontSize || 18) * 0.55, h: (el.fontSize || 18) + 8 };
+          else if (el.type === 'handwriting') bbox = { x: el.x - 4, y: el.y - 4, w: (el.maxWidth || el.width || 300) + 16, h: (el.height || 100) + 20 };
+          else if (el.type === 'image') bbox = { x: el.x - 2, y: el.y - 2, w: (el.w || 200) + 4, h: (el.h || 150) + 4 };
+          else if (el.type === 'pen') {
+            const xs = el.points.map(p => p[0]), ys = el.points.map(p => p[1]);
+            bbox = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+          }
+          if (!bbox) return null;
+          posX = (bbox.x + bbox.w / 2) * transform.scale + transform.x;
+          posY = bbox.y * transform.scale + transform.y - 44;
+        }
+
+        const isHandwriting = el.type === 'handwriting';
+        const isBold = charSelection
+          ? el.charStyles?.[charSelection.startIdx]?.bold
+          : false;
+        const isItalic = charSelection
+          ? el.charStyles?.[charSelection.startIdx]?.italic
+          : false;
+        const isHighlight = charSelection
+          ? el.charStyles?.[charSelection.startIdx]?.highlight
+          : false;
+
+        const handleDelete = () => {
+          if (charSelection) {
+            deleteSelectedChars();
+          } else {
+            deleteSelected();
+          }
+        };
+
+        const toggleBold = () => {
+          if (charSelection) {
+            applyCharStyle({ bold: !isBold });
+          } else if (isHandwriting) {
+            const textLen = (el.text || '').length;
+            setElements(prev => {
+              const next = prev.map(q => {
+                if (q && q.id === el.id) {
+                  const charStyles = { ...(q.charStyles || {}) };
+                  for (let i = 0; i < textLen; i++) {
+                    charStyles[i] = { ...(charStyles[i] || {}), bold: !isBold };
+                  }
+                  return { ...q, charStyles };
+                }
+                return q;
+              });
+              snapshot(next);
+              return next;
+            });
+          }
+        };
+
+        const toggleItalic = () => {
+          if (charSelection) {
+            applyCharStyle({ italic: !isItalic });
+          } else if (isHandwriting) {
+            const textLen = (el.text || '').length;
+            setElements(prev => {
+              const next = prev.map(q => {
+                if (q && q.id === el.id) {
+                  const charStyles = { ...(q.charStyles || {}) };
+                  for (let i = 0; i < textLen; i++) {
+                    charStyles[i] = { ...(charStyles[i] || {}), italic: !isItalic };
+                  }
+                  return { ...q, charStyles };
+                }
+                return q;
+              });
+              snapshot(next);
+              return next;
+            });
+          }
+        };
+
+        const toggleHighlight = () => {
+          if (charSelection) {
+            applyCharStyle({ highlight: isHighlight ? null : 'rgba(255, 214, 0, 0.35)' });
+          } else if (isHandwriting) {
+            const textLen = (el.text || '').length;
+            setElements(prev => {
+              const next = prev.map(q => {
+                if (q && q.id === el.id) {
+                  const charStyles = { ...(q.charStyles || {}) };
+                  for (let i = 0; i < textLen; i++) {
+                    charStyles[i] = { ...(charStyles[i] || {}), highlight: isHighlight ? null : 'rgba(255, 214, 0, 0.35)' };
+                  }
+                  return { ...q, charStyles };
+                }
+                return q;
+              });
+              snapshot(next);
+              return next;
+            });
+          }
+        };
 
         return (
           <div
             data-toolbar="true"
-            className="absolute z-30 flex items-center gap-1.5 px-2.5 py-1 bg-card/95 text-card-foreground border border-border shadow-xl rounded-xl backdrop-blur-md -translate-x-1/2 select-none"
-            style={{ left: Math.max(90, sx), top: Math.max(16, sy) }}
+            className="absolute z-40 flex items-center gap-1.5 px-2.5 py-1 bg-card/95 text-card-foreground border border-border shadow-2xl rounded-2xl backdrop-blur-xl -translate-x-1/2 select-none animate-in fade-in zoom-in-95 duration-150"
+            style={{
+              left: Math.max(140, Math.min(window.innerWidth - 160, posX)),
+              top: Math.max(16, posY),
+            }}
           >
-            {/* Move handle for dragging entire element */}
+            {/* Move handle */}
             <div
-              className="flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-foreground/80 hover:text-foreground hover:bg-muted/80 rounded-md cursor-grab active:cursor-grabbing transition-colors"
+              className="flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-foreground/80 hover:text-foreground hover:bg-muted/80 rounded-lg cursor-grab active:cursor-grabbing transition-colors"
               title="Drag to move entire element"
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -1190,103 +1289,65 @@ export default function Canvas({ page }) {
               <span>Move</span>
             </div>
 
+            {isHandwriting && (
+              <>
+                <div className="w-px h-3.5 bg-border mx-0.5" />
+
+                {/* Bold */}
+                <button
+                  type="button"
+                  title="Toggle Bold"
+                  onClick={toggleBold}
+                  className={`p-1 rounded-lg hover:bg-muted font-bold text-xs w-6 h-6 flex items-center justify-center transition-colors ${isBold ? 'bg-primary/15 text-primary' : ''}`}
+                >
+                  <Bold className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Italic */}
+                <button
+                  type="button"
+                  title="Toggle Italic"
+                  onClick={toggleItalic}
+                  className={`p-1 rounded-lg hover:bg-muted italic text-xs w-6 h-6 flex items-center justify-center transition-colors ${isItalic ? 'bg-primary/15 text-primary' : ''}`}
+                >
+                  <Italic className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Highlight */}
+                <button
+                  type="button"
+                  title="Yellow Highlight"
+                  onClick={toggleHighlight}
+                  className={`p-1 rounded-lg hover:bg-muted text-xs w-6 h-6 flex items-center justify-center transition-colors ${isHighlight ? 'bg-amber-400/20 text-amber-500' : 'text-amber-500'}`}
+                >
+                  <Highlighter className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+
             <div className="w-px h-3.5 bg-border mx-0.5" />
 
-            <span className="text-[10px] font-mono uppercase font-semibold text-muted-foreground">
-              {el.type === 'handwriting' ? 'Handwriting' : el.type}
-            </span>
-            <div className="w-px h-3.5 bg-border mx-0.5" />
+            {/* Single Delete / Erase button */}
             <button
               type="button"
               data-testid="selection-delete-btn"
-              title="Delete selected item (Del / Backspace)"
-              onClick={deleteSelected}
-              className="flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+              title={charSelection ? "Erase selected characters" : "Delete selected item (Del / Backspace)"}
+              onClick={handleDelete}
+              className="flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5 text-destructive" />
-              <span>Delete</span>
-            </button>
-          </div>
-        );
-      })()}
-
-      {/* ── Floating Character Formatting Toolbar ── */}
-      {charSelection && (() => {
-        const { rect } = charSelection;
-        const containerRect = wrapRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
-        const floatingX = rect.left - containerRect.left + rect.width / 2;
-        const floatingY = rect.top - containerRect.top - 48;
-
-        return (
-          <div
-            data-toolbar="true"
-            className="absolute z-40 flex items-center gap-1.5 p-1.5 bg-card/95 text-card-foreground border border-border shadow-2xl rounded-2xl backdrop-blur-xl -translate-x-1/2 select-none animate-in fade-in zoom-in-95 duration-150"
-            style={{
-              left: Math.max(120, Math.min(window.innerWidth - 180, floatingX)),
-              top: Math.max(16, floatingY),
-            }}
-          >
-            {/* Bold */}
-            <button
-              type="button"
-              title="Toggle Bold"
-              onClick={() => {
-                const el = elements.find(e => e && e.id === charSelection.elId);
-                const currentBold = el?.charStyles?.[charSelection.startIdx]?.bold;
-                applyCharStyle({ bold: !currentBold });
-              }}
-              className="p-1 rounded-lg hover:bg-muted font-bold text-xs w-6 h-6 flex items-center justify-center transition-colors"
-            >
-              <Bold className="w-3.5 h-3.5" />
-            </button>
-
-            {/* Italic */}
-            <button
-              type="button"
-              title="Toggle Italic"
-              onClick={() => {
-                const el = elements.find(e => e && e.id === charSelection.elId);
-                const currentItalic = el?.charStyles?.[charSelection.startIdx]?.italic;
-                applyCharStyle({ italic: !currentItalic });
-              }}
-              className="p-1 rounded-lg hover:bg-muted italic text-xs w-6 h-6 flex items-center justify-center transition-colors"
-            >
-              <Italic className="w-3.5 h-3.5" />
-            </button>
-
-            {/* Highlight */}
-            <button
-              type="button"
-              title="Yellow Highlight"
-              onClick={() => {
-                const el = elements.find(e => e && e.id === charSelection.elId);
-                const currentHighlight = el?.charStyles?.[charSelection.startIdx]?.highlight;
-                applyCharStyle({ highlight: currentHighlight ? null : 'rgba(255, 214, 0, 0.35)' });
-              }}
-              className="p-1 rounded-lg hover:bg-muted text-xs w-6 h-6 flex items-center justify-center transition-colors text-amber-500"
-            >
-              <Highlighter className="w-3.5 h-3.5" />
-            </button>
-
-            <div className="w-px h-4 bg-border mx-0.5" />
-
-            {/* Delete Selection */}
-            <button
-              type="button"
-              title="Delete selected characters"
-              onClick={deleteSelectedChars}
-              className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Erase</span>
+              <span>{charSelection ? 'Erase' : 'Delete'}</span>
             </button>
 
             {/* Close / Deselect */}
             <button
               type="button"
               title="Deselect"
-              onClick={() => setCharSelection(null)}
-              className="p-1 rounded-lg hover:bg-muted text-muted-foreground transition-colors"
+              onClick={() => {
+                setCharSelection(null);
+                setSelectedId(null);
+              }}
+              className="p-1 rounded-lg hover:bg-muted text-muted-foreground transition-colors ml-0.5"
             >
               <X className="w-3.5 h-3.5" />
             </button>
