@@ -110,6 +110,32 @@ let memoryState = null;
 const listeners = new Set();
 let cloudSyncTimeout = null;
 
+// Sync status tracking: 'saved' | 'saving' | 'error' | 'local'
+let syncStatusState = {
+  status: typeof localStorage !== 'undefined' && localStorage.getItem(TOKEN_KEY) ? 'saved' : 'local',
+  lastSaved: Date.now(),
+  isCloud: typeof localStorage !== 'undefined' && Boolean(localStorage.getItem(TOKEN_KEY)),
+  message: '',
+};
+const syncStatusListeners = new Set();
+
+const setSyncStatusState = (patch) => {
+  syncStatusState = { ...syncStatusState, ...patch };
+  syncStatusListeners.forEach((l) => l(syncStatusState));
+};
+
+export const getSyncStatusState = () => syncStatusState;
+
+export const useSyncStatus = () => {
+  const [status, setStatus] = useState(getSyncStatusState);
+  useEffect(() => {
+    const l = (s) => setStatus({ ...s });
+    syncStatusListeners.add(l);
+    return () => syncStatusListeners.delete(l);
+  }, []);
+  return status;
+};
+
 export const getState = () => {
   if (!memoryState) memoryState = load();
   return memoryState;
@@ -118,7 +144,12 @@ export const getState = () => {
 // Debounced cloud sync to MongoDB
 const syncToCloudDebounced = (state) => {
   const token = localStorage.getItem(TOKEN_KEY);
-  if (!token) return;
+  if (!token) {
+    setSyncStatusState({ status: 'local', isCloud: false, lastSaved: Date.now() });
+    return;
+  }
+
+  setSyncStatusState({ status: 'saving', isCloud: true, message: 'Saving to cloud…' });
 
   if (cloudSyncTimeout) {
     clearTimeout(cloudSyncTimeout);
@@ -126,7 +157,7 @@ const syncToCloudDebounced = (state) => {
 
   cloudSyncTimeout = setTimeout(async () => {
     try {
-      await fetch('/api/workspace', {
+      const res = await fetch('/api/workspace', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -137,10 +168,60 @@ const syncToCloudDebounced = (state) => {
           notebooks: state.notebooks,
         }),
       });
+      if (res.ok) {
+        setSyncStatusState({ status: 'saved', isCloud: true, lastSaved: Date.now(), message: 'All changes saved to cloud' });
+      } else {
+        setSyncStatusState({ status: 'error', isCloud: true, message: 'Cloud sync failed' });
+      }
     } catch (err) {
       console.warn('MongoDB cloud sync failed:', err);
+      setSyncStatusState({ status: 'error', isCloud: true, message: 'Offline (saved locally)' });
     }
-  }, 1000);
+  }, 800);
+};
+
+export const saveWorkspaceNow = async () => {
+  const state = getState();
+  saveLocal(state);
+
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (cloudSyncTimeout) {
+    clearTimeout(cloudSyncTimeout);
+    cloudSyncTimeout = null;
+  }
+
+  if (!token) {
+    const now = Date.now();
+    setSyncStatusState({ status: 'local', isCloud: false, lastSaved: now, message: 'Saved locally' });
+    return { success: true, isCloud: false, lastSaved: now };
+  }
+
+  setSyncStatusState({ status: 'saving', isCloud: true, message: 'Saving to cloud…' });
+  try {
+    const res = await fetch('/api/workspace', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        activePageId: state.activePageId,
+        notebooks: state.notebooks,
+      }),
+    });
+    if (res.ok) {
+      const now = Date.now();
+      setSyncStatusState({ status: 'saved', isCloud: true, lastSaved: now, message: 'All changes saved to cloud' });
+      return { success: true, isCloud: true, lastSaved: now };
+    } else {
+      setSyncStatusState({ status: 'error', isCloud: true, message: 'Cloud save error' });
+      return { success: false, isCloud: true, error: 'Server error saving workspace' };
+    }
+  } catch (err) {
+    console.warn('Manual MongoDB save failed:', err);
+    setSyncStatusState({ status: 'error', isCloud: true, message: 'Offline (saved locally)' });
+    return { success: false, isCloud: true, error: err.message };
+  }
 };
 
 export const setState = (updater) => {
@@ -406,4 +487,6 @@ export const actions = {
     }
     return elWithId;
   },
+
+  saveNow: saveWorkspaceNow,
 };
