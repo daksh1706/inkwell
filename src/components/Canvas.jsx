@@ -895,11 +895,8 @@ export default function Canvas({ page }) {
                               fontWeight: cStyle.bold ? 'bold' : undefined,
                               fontStyle: cStyle.italic ? 'italic' : undefined,
                               textDecoration: cStyle.underline ? 'underline' : undefined,
-                              backgroundColor: isCharSelected
-                                ? (cStyle.highlight ? 'rgba(255, 200, 0, 0.6)' : 'rgba(255, 51, 31, 0.22)')
-                                : (cStyle.highlight || undefined),
-                              borderRadius: (isCharSelected || cStyle.highlight) ? '2px' : undefined,
-                              boxShadow: isCharSelected ? '0 0 0 1.5px rgba(255, 51, 31, 0.6)' : undefined,
+                              backgroundColor: cStyle.highlight || undefined,
+                              borderRadius: cStyle.highlight ? '2px' : undefined,
                               userSelect: tool === 'select' ? 'text' : 'none',
                             }}
                           >
