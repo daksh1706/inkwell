@@ -1,7 +1,21 @@
-// Handwriting Font & Rendering Utility
+// Handwriting & Code Font & Rendering Utility
 export const HANDWRITING_FONTS = [
   {
-    name: 'Caveat',
+    name: 'JetBrains Mono (Code)',
+    family: 'JetBrains Mono',
+    weight: '500',
+    isMonospace: true,
+    url: 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap'
+  },
+  {
+    name: 'IBM Plex Mono (Code)',
+    family: 'IBM Plex Mono',
+    weight: '500',
+    isMonospace: true,
+    url: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap'
+  },
+  {
+    name: 'Caveat (Handwritten)',
     family: 'Caveat',
     weight: '600',
     url: 'https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&display=swap'
@@ -65,45 +79,49 @@ export async function ensureFontLoaded(fontFamily, weight = '400', fontSize = '2
 }
 
 /**
- * Wraps text into lines based on maximum width using canvas font measurement
+ * Wraps text into lines based on maximum width using canvas font measurement while preserving indentation
  */
 export function calculateTextLayout(ctx, text, maxWidth, fontSize, fontFamily, lineHeightRatio = 1.35) {
   if (ctx) {
-    ctx.font = `${fontSize}px "${fontFamily}", cursive, sans-serif`;
+    ctx.font = `${fontSize}px "${fontFamily}", monospace, cursive, sans-serif`;
   }
   const lineHeight = fontSize * lineHeightRatio;
-  const rawParagraphs = (text || '').split(/\r?\n/);
+  // Convert tabs to 4 spaces for uniform code rendering
+  const normalizedText = (text || '').replace(/\t/g, '    ');
+  const rawParagraphs = normalizedText.split(/\r?\n/);
   const lines = [];
 
   for (const paragraph of rawParagraphs) {
-    if (paragraph.trim() === '') {
+    if (paragraph.length === 0) {
       lines.push('');
       continue;
     }
 
-    const words = paragraph.split(' ');
+    // Split preserving whitespace tokens (e.g. leading 4 spaces "    ")
+    const tokens = paragraph.match(/\S+|\s+/g) || [paragraph];
     let currentLine = '';
 
-    for (let i = 0; i < words.length; i++) {
-      const word = words[i];
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      const testLine = currentLine + token;
       let textWidth = 0;
       
       if (ctx) {
         textWidth = ctx.measureText(testLine).width;
       } else {
         // Approximate fallback
-        textWidth = testLine.length * (fontSize * 0.45);
+        textWidth = testLine.length * (fontSize * 0.55);
       }
 
-      if (textWidth > maxWidth && currentLine !== '') {
+      if (textWidth > maxWidth && currentLine.trim() !== '') {
         lines.push(currentLine);
-        currentLine = word;
+        // If token starts with space, keep it clean on new line or trim leading space for wrapped word
+        currentLine = token.startsWith(' ') && !token.startsWith('   ') ? token.trimStart() : token;
       } else {
         currentLine = testLine;
       }
     }
-    if (currentLine) {
+    if (currentLine !== '') {
       lines.push(currentLine);
     }
   }
@@ -115,7 +133,7 @@ export function calculateTextLayout(ctx, text, maxWidth, fontSize, fontFamily, l
     if (ctx) {
       w = ctx.measureText(line).width;
     } else {
-      w = line.length * (fontSize * 0.45);
+      w = line.length * (fontSize * 0.55);
     }
     if (w > actualMaxWidth) actualMaxWidth = w;
   }
@@ -132,7 +150,7 @@ export function calculateTextLayout(ctx, text, maxWidth, fontSize, fontFamily, l
 }
 
 /**
- * Renders handwritten text onto Canvas 2D Context with High-DPI and natural jitter
+ * Renders handwritten or code text onto Canvas 2D Context with High-DPI, syntax highlighting & natural jitter
  */
 export function drawHandwrittenText(ctx, {
   lines,
@@ -145,42 +163,62 @@ export function drawHandwrittenText(ctx, {
   y = 0,
   width = 300,
   jitter = 0.4,
+  charColors = {},
+  charStyles = {},
 }) {
   ctx.save();
-  ctx.font = `${fontSize}px "${fontFamily}", cursive, sans-serif`;
-  ctx.fillStyle = color;
   ctx.textBaseline = 'top';
+
+  const isMono = fontFamily.includes('Mono');
+  let cumulativeCharIdx = 0;
 
   lines.forEach((line, index) => {
     const lineY = y + index * lineHeight;
     let lineX = x;
 
+    ctx.font = `${fontSize}px "${fontFamily}", monospace, cursive, sans-serif`;
     const lineWidth = ctx.measureText(line).width;
+
     if (align === 'center') {
       lineX = x + Math.max(0, (width - lineWidth) / 2);
     } else if (align === 'right') {
       lineX = x + Math.max(0, width - lineWidth);
     }
 
-    if (jitter > 0) {
-      let currentWordX = lineX;
-      const words = line.split(' ');
+    const lineStartCharIdx = cumulativeCharIdx;
+    cumulativeCharIdx += line.length + 1; // including newline
 
-      words.forEach((word, wIdx) => {
-        const seed = (index + 1) * 37 + (wIdx + 1) * 17;
-        const driftY = Math.sin(seed) * jitter * 2;
-        const angle = Math.cos(seed) * (jitter * 0.02);
+    // Render character by character to support individual syntax colors, styles & organic drift
+    let currentX = lineX;
+    const chars = line.split('');
+
+    for (let cIdx = 0; cIdx < chars.length; cIdx++) {
+      const char = chars[cIdx];
+      const absIdx = lineStartCharIdx + cIdx;
+      const charColor = charColors[absIdx] || color;
+      const charStyle = charStyles[absIdx] || {};
+
+      const fontPrefix = `${charStyle.bold ? 'bold ' : ''}${charStyle.italic ? 'italic ' : ''}`;
+      ctx.font = `${fontPrefix}${fontSize}px "${fontFamily}", monospace, cursive, sans-serif`;
+      ctx.fillStyle = charColor;
+
+      const charWidth = ctx.measureText(char).width;
+
+      if (jitter > 0 && !isMono) {
+        const seed = (index + 1) * 37 + (cIdx + 1) * 13;
+        const driftY = Math.sin(seed) * (jitter * 1.5);
+        const angle = Math.cos(seed) * (jitter * 0.015);
 
         ctx.save();
-        ctx.translate(currentWordX, lineY + driftY);
+        ctx.translate(currentX, lineY + driftY);
         ctx.rotate(angle);
-        ctx.fillText(word, 0, 0);
+        ctx.fillText(char, 0, 0);
         ctx.restore();
+      } else {
+        ctx.fillText(char, currentX, lineY);
+      }
 
-        currentWordX += ctx.measureText(word + ' ').width;
-      });
-    } else {
-      ctx.fillText(line, lineX, lineY);
+      currentX += charWidth;
     }
   });
 
@@ -199,6 +237,8 @@ export async function rasterizeHandwritingToImage(options) {
     align = 'left',
     maxWidth = 480,
     jitter = 0.4,
+    charColors = {},
+    charStyles = {},
   } = options;
 
   await ensureFontLoaded(fontFamily, '600', `${fontSize}px`);
@@ -229,6 +269,8 @@ export async function rasterizeHandwritingToImage(options) {
     y: padding,
     width: layout.width,
     jitter,
+    charColors,
+    charStyles,
   });
 
   return {
@@ -237,3 +279,4 @@ export async function rasterizeHandwritingToImage(options) {
     height: totalHeight,
   };
 }
+

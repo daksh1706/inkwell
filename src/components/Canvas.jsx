@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { actions, uid } from '@/lib/store';
 import CanvasToolbar from '@/components/CanvasToolbar';
 import { getStroke } from 'perfect-freehand';
-import { Trash2, Bold, Italic, Highlighter, Palette, X, Move } from 'lucide-react';
+import { Trash2, Bold, Italic, Highlighter, Palette, X, Move, Code } from 'lucide-react';
+import { generateSyntaxCharColors } from '@/lib/syntaxHighlighter';
 
 const SHAPE_TOOLS = ['rect', 'ellipse', 'line', 'arrow'];
 const LASER_DECAY = 900; // ms
@@ -835,9 +836,11 @@ export default function Canvas({ page }) {
     if (el.type === 'text') {
       const family = el.font === 'display' ? 'Outfit'
                    : el.font === 'hand'    ? 'Caveat'
-                   : 'IBM Plex Sans';
+                   : el.font === 'mono'    ? 'JetBrains Mono'
+                   : el.fontFamily || 'IBM Plex Sans';
       const fontSize = el.fontSize || 18;
-      const lines = (el.text || '').split('\n');
+      const normalizedText = (el.text || '').replace(/\t/g, '    ');
+      const lines = normalizedText.split('\n');
       const maxLineLen = Math.max(...lines.map(l => l.length), 1);
       const width = el.maxWidth || el.width || Math.max(120, maxLineLen * fontSize * 0.65 + 24);
       const height = el.height || Math.max(32, lines.length * fontSize * 1.45 + 10);
@@ -860,9 +863,10 @@ export default function Canvas({ page }) {
               data-elid={el.id}
               className="canvas-text-block"
               style={{
-                fontFamily: `"${family}", ${el.font === 'hand' ? 'cursive, ' : ''}sans-serif`,
+                fontFamily: `"${family}", monospace, ${el.font === 'hand' ? 'cursive, ' : ''}sans-serif`,
                 fontSize: `${fontSize}px`,
                 lineHeight: 1.35,
+                tabSize: 4,
                 color: el.color || '#111111',
                 textAlign: el.align || 'left',
                 whiteSpace: 'pre-wrap',
@@ -961,7 +965,8 @@ export default function Canvas({ page }) {
       const fontFam = el.fontFamily || 'Caveat';
       const width = el.maxWidth || el.width || 400;
       const height = el.height || 180;
-      const lines = (el.text || '').split('\n');
+      const normalizedText = (el.text || '').replace(/\t/g, '    ');
+      const lines = normalizedText.split('\n');
       const erasedSet = new Set(el.erasedIndices || []);
       const charColors = el.charColors || {};
       const charStyles = el.charStyles || {};
@@ -981,9 +986,10 @@ export default function Canvas({ page }) {
               data-elid={el.id}
               className="handwriting-text-block canvas-text-block"
               style={{
-                fontFamily: `"${fontFam}", cursive, sans-serif`,
+                fontFamily: `"${fontFam}", monospace, cursive, sans-serif`,
                 fontSize: `${el.fontSize || 28}px`,
                 lineHeight: 1.35,
+                tabSize: 4,
                 color: el.color || '#111111',
                 textAlign: el.align || 'left',
                 whiteSpace: 'pre-wrap',
@@ -1410,6 +1416,27 @@ export default function Canvas({ page }) {
           }
         };
 
+        const applyCodeHighlight = () => {
+          const fullText = el.text || '';
+          const { charColors: codeColors, charStyles: codeStyles } = generateSyntaxCharColors(fullText, 'light');
+          setElements(prev => {
+            const next = prev.map(q => {
+              if (q && q.id === el.id) {
+                return {
+                  ...q,
+                  charColors: codeColors,
+                  charStyles: codeStyles,
+                  font: q.type === 'text' ? 'mono' : q.font,
+                  fontFamily: q.type === 'handwriting' ? 'JetBrains Mono' : q.fontFamily,
+                };
+              }
+              return q;
+            });
+            snapshot(next);
+            return next;
+          });
+        };
+
         return (
           <div
             data-toolbar="true"
@@ -1537,6 +1564,16 @@ export default function Canvas({ page }) {
                 >
                   <Highlighter className="w-3.5 h-3.5" />
                 </button>
+
+                {/* Syntax Highlighting */}
+                <button
+                  type="button"
+                  title="Apply Code Syntax Highlighting"
+                  onClick={applyCodeHighlight}
+                  className="p-1 rounded-lg hover:bg-muted text-xs w-6 h-6 flex items-center justify-center transition-colors text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"
+                >
+                  <Code className="w-3.5 h-3.5" />
+                </button>
               </>
             )}
 
@@ -1553,6 +1590,7 @@ export default function Canvas({ page }) {
               <Trash2 className="w-3.5 h-3.5 text-destructive" />
               <span>{activeCharSel ? 'Erase' : 'Delete'}</span>
             </button>
+
 
             {/* Close / Deselect */}
             <button

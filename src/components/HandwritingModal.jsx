@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   HANDWRITING_FONTS,
   ensureFontLoaded,
@@ -6,7 +6,8 @@ import {
   drawHandwrittenText,
   rasterizeHandwritingToImage
 } from '@/lib/handwritingRenderer';
-import { AlignLeft, AlignCenter, AlignRight, Sparkles, Wand2, Layers, X, SlidersHorizontal } from 'lucide-react';
+import { isLikelyCode, generateSyntaxCharColors } from '@/lib/syntaxHighlighter';
+import { AlignLeft, AlignCenter, AlignRight, Sparkles, Wand2, Layers, X, SlidersHorizontal, Code, Check } from 'lucide-react';
 
 export default function HandwritingModal({
   isOpen,
@@ -17,19 +18,38 @@ export default function HandwritingModal({
 }) {
   const [text, setText] = useState(initialText || '');
   const [fontFamily, setFontFamily] = useState('Caveat');
-  const [fontSize, setFontSize] = useState(28);
+  const [fontSize, setFontSize] = useState(24);
   const [color, setColor] = useState('#111111');
   const [align, setAlign] = useState('left');
-  const [maxWidth, setMaxWidth] = useState(480);
-  const [jitter, setJitter] = useState(0.4);
+  const [maxWidth, setMaxWidth] = useState(540);
+  const [jitter, setJitter] = useState(0.2);
+  const [isCodeMode, setIsCodeMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const previewCanvasRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
-      setText(initialText || '');
+      const raw = initialText || '';
+      setText(raw);
+      const isCode = isLikelyCode(raw);
+      setIsCodeMode(isCode);
+      if (isCode) {
+        setFontFamily('JetBrains Mono');
+        setJitter(0);
+        setFontSize(20);
+      } else {
+        setFontFamily('Caveat');
+        setJitter(0.35);
+        setFontSize(26);
+      }
     }
   }, [isOpen, initialText]);
+
+  // Compute character syntax colors & styles if in Code Mode
+  const { charColors, charStyles } = useMemo(() => {
+    if (!isCodeMode) return { charColors: {}, charStyles: {} };
+    return generateSyntaxCharColors(text, 'light');
+  }, [text, isCodeMode]);
 
   // Update canvas preview
   useEffect(() => {
@@ -70,14 +90,16 @@ export default function HandwritingModal({
         x: pad,
         y: pad,
         width: layout.width,
-        jitter,
+        jitter: isCodeMode ? 0 : jitter,
+        charColors,
+        charStyles,
       });
       ctx.restore();
     }
 
     renderPreview();
     return () => { cancelled = true; };
-  }, [isOpen, text, fontFamily, fontSize, color, align, maxWidth, jitter]);
+  }, [isOpen, text, fontFamily, fontSize, color, align, maxWidth, jitter, isCodeMode, charColors, charStyles]);
 
   if (!isOpen) return null;
 
@@ -97,7 +119,10 @@ export default function HandwritingModal({
       maxWidth,
       width: layout.width,
       height: layout.height,
-      jitter,
+      jitter: isCodeMode ? 0 : jitter,
+      isCode: isCodeMode,
+      charColors,
+      charStyles,
     });
     onClose();
   };
@@ -111,7 +136,9 @@ export default function HandwritingModal({
       color,
       align,
       maxWidth,
-      jitter,
+      jitter: isCodeMode ? 0 : jitter,
+      charColors,
+      charStyles,
     });
     setIsLoading(false);
     onInsertRasterized?.({
@@ -130,35 +157,77 @@ export default function HandwritingModal({
         {/* Header */}
         <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-muted/40">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
-              <Sparkles className="w-5 h-5" />
+            <div className={`p-2 rounded-xl ${isCodeMode ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'}`}>
+              {isCodeMode ? <Code className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="font-display font-semibold text-base">Convert Text to Handwriting</h3>
-              <p className="text-xs text-muted-foreground">Render typed notes into realistic handwritten strokes on canvas</p>
+              <h3 className="font-display font-semibold text-base">
+                {isCodeMode ? 'Render Code with Syntax Highlighting' : 'Convert Text to Handwriting'}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {isCodeMode
+                  ? 'Format keywords, types, and variables with accurate IDE syntax tokens'
+                  : 'Render typed notes into realistic handwritten strokes on canvas'}
+              </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          
+          <div className="flex items-center gap-2">
+            {/* Syntax Mode Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                const nextMode = !isCodeMode;
+                setIsCodeMode(nextMode);
+                if (nextMode) {
+                  setFontFamily('JetBrains Mono');
+                  setJitter(0);
+                  setFontSize(20);
+                } else {
+                  setFontFamily('Caveat');
+                  setJitter(0.35);
+                  setFontSize(26);
+                }
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                isCodeMode
+                  ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
+                  : 'bg-background hover:bg-muted text-foreground border-border'
+              }`}
+            >
+              <Code className="w-3.5 h-3.5" />
+              <span>Syntax Colors</span>
+              {isCodeMode && <Check className="w-3 h-3 ml-0.5" />}
+            </button>
+
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Form Controls */}
-        <div className="p-6 space-y-5 overflow-y-auto flex-1">
+        <div className="p-6 space-y-4 overflow-y-auto flex-1">
           {/* Text Input */}
           <div>
-            <label className="text-xs font-semibold text-muted-foreground mb-1.5 block uppercase tracking-wider">
-              Text to Convert
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                {isCodeMode ? 'Code / Text Snippet' : 'Text to Convert'}
+              </label>
+              <span className="text-[11px] text-muted-foreground font-mono">
+                {text.split('\n').length} lines · {text.length} chars
+              </span>
+            </div>
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Enter or paste text to convert to handwriting..."
-              rows={3}
-              className="w-full text-sm p-3 rounded-xl border border-input bg-background/70 focus:outline-none focus:ring-2 focus:ring-amber-500/30 font-sans"
+              placeholder="Paste code or text here (e.g. class Solution { ... })..."
+              rows={5}
+              spellCheck={false}
+              className={`w-full text-sm p-3 rounded-xl border border-input bg-background/80 focus:outline-none focus:ring-2 focus:ring-amber-500/30 font-mono leading-relaxed whitespace-pre`}
             />
           </div>
 
@@ -166,7 +235,7 @@ export default function HandwritingModal({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-semibold text-muted-foreground mb-1.5 block uppercase tracking-wider">
-                Font Style
+                Font Family
               </label>
               <select
                 value={fontFamily}
@@ -187,8 +256,8 @@ export default function HandwritingModal({
               </label>
               <input
                 type="range"
-                min="16"
-                max="60"
+                min="14"
+                max="48"
                 value={fontSize}
                 onChange={(e) => setFontSize(Number(e.target.value))}
                 className="w-full accent-amber-500 mt-2"
@@ -197,7 +266,7 @@ export default function HandwritingModal({
 
             <div>
               <label className="text-xs font-semibold text-muted-foreground mb-1.5 block uppercase tracking-wider">
-                Ink Color
+                Base Text Color
               </label>
               <div className="flex items-center gap-2 mt-1">
                 <input
@@ -241,12 +310,12 @@ export default function HandwritingModal({
 
             <div>
               <label className="text-xs font-semibold text-muted-foreground mb-1.5 block uppercase tracking-wider">
-                Max Line Width ({maxWidth}px)
+                Max Width ({maxWidth}px)
               </label>
               <input
                 type="range"
                 min="200"
-                max="800"
+                max="900"
                 step="20"
                 value={maxWidth}
                 onChange={(e) => setMaxWidth(Number(e.target.value))}
@@ -256,16 +325,17 @@ export default function HandwritingModal({
 
             <div>
               <label className="text-xs font-semibold text-muted-foreground mb-1.5 block uppercase tracking-wider">
-                Natural Slant & Drift ({Math.round(jitter * 100)}%)
+                Handwriting Drift ({isCodeMode ? '0%' : `${Math.round(jitter * 100)}%`})
               </label>
               <input
                 type="range"
                 min="0"
                 max="1"
-                step="0.1"
-                value={jitter}
+                step="0.05"
+                disabled={isCodeMode}
+                value={isCodeMode ? 0 : jitter}
                 onChange={(e) => setJitter(Number(e.target.value))}
-                className="w-full accent-amber-500 mt-2"
+                className="w-full accent-amber-500 mt-2 disabled:opacity-40"
               />
             </div>
           </div>
@@ -275,13 +345,13 @@ export default function HandwritingModal({
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                 <SlidersHorizontal className="w-3.5 h-3.5" />
-                Live Canvas Preview
+                Live Preview
               </label>
               {isLoading && (
                 <span className="text-xs text-amber-500 font-medium animate-pulse">Loading font…</span>
               )}
             </div>
-            <div className="min-h-[120px] max-h-[170px] overflow-auto bg-amber-50/40 dark:bg-zinc-950/40 border border-dashed border-amber-300/80 dark:border-zinc-800 rounded-xl p-4 flex items-center justify-center">
+            <div className="min-h-[140px] max-h-[220px] overflow-auto bg-card border border-dashed border-border rounded-xl p-4 flex items-center justify-start shadow-inner">
               <canvas ref={previewCanvasRef} className="max-w-full drop-shadow-sm" />
             </div>
           </div>
@@ -313,7 +383,7 @@ export default function HandwritingModal({
               type="button"
               onClick={handleInsertEditable}
               disabled={!text.trim() || isLoading}
-              title="Insert as selectable and movable handwriting object"
+              title="Insert as selectable, formatable object"
               className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-500/20 transition-all disabled:opacity-50"
             >
               <Wand2 className="w-4 h-4" />
@@ -326,3 +396,4 @@ export default function HandwritingModal({
     </div>
   );
 }
+

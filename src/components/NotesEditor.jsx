@@ -49,13 +49,13 @@ export default function NotesEditor({ page, fullWidth }) {
     let text = '';
 
     if (selection && selection.toString().trim()) {
-      text = selection.toString().trim();
+      text = selection.toString();
     } else if (ref.current) {
-      text = ref.current.innerText.trim();
+      text = ref.current.innerText || '';
     }
 
-    if (!text) {
-      toast.error('Write or select some text first to convert to handwriting');
+    if (!text.trim()) {
+      toast.error('Write or select some text first to convert to handwriting / code');
       return;
     }
 
