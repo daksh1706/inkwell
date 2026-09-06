@@ -241,9 +241,18 @@ export default function Canvas({ page }) {
         const range = sel.getRangeAt(0);
 
         // 1. Direct span resolution
-        const getSpanInfo = (node) => {
+        const getSpanInfo = (node, offset = 0, isEnd = false) => {
           if (!node) return null;
-          const elem = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+          let targetNode = node;
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            if (node.hasAttribute('data-char-idx')) {
+              targetNode = node;
+            } else if (node.childNodes.length > 0) {
+              const childIdx = isEnd ? Math.max(0, offset - 1) : Math.min(offset, node.childNodes.length - 1);
+              targetNode = node.childNodes[childIdx] || node;
+            }
+          }
+          const elem = targetNode.nodeType === Node.TEXT_NODE ? targetNode.parentElement : targetNode;
           const span = elem?.closest?.('[data-char-idx]');
           if (!span) return null;
           const elId = span.dataset.elid;
@@ -251,8 +260,8 @@ export default function Canvas({ page }) {
           return isNaN(idx) || !elId ? null : { elId, idx, span };
         };
 
-        const startInfo = getSpanInfo(range.startContainer);
-        const endInfo = getSpanInfo(range.endContainer);
+        const startInfo = getSpanInfo(range.startContainer, range.startOffset, false);
+        const endInfo = getSpanInfo(range.endContainer, range.endOffset, true);
 
         let foundElId = null;
         let minIdx = Infinity;
@@ -262,25 +271,11 @@ export default function Canvas({ page }) {
           foundElId = startInfo.elId;
           minIdx = Math.min(startInfo.idx, endInfo.idx);
           maxIdx = Math.max(startInfo.idx, endInfo.idx);
-        } else {
-          // 2. Fallback: check intersecting char spans in container
-          const common = range.commonAncestorContainer;
-          const container = common?.nodeType === Node.ELEMENT_NODE ? common : common?.parentElement;
-          const textBlock = container?.closest?.('.handwriting-text-block') || container?.closest?.('.canvas-text-block') || container?.closest?.('[data-elid]');
-          if (textBlock) {
-            const elId = textBlock.dataset.elid;
-            const spans = textBlock.querySelectorAll('[data-char-idx]');
-            spans.forEach(span => {
-              if (sel.containsNode(span, true)) {
-                const idx = parseInt(span.dataset.charIdx, 10);
-                if (!isNaN(idx)) {
-                  foundElId = elId;
-                  if (idx < minIdx) minIdx = idx;
-                  if (idx > maxIdx) maxIdx = idx;
-                }
-              }
-            });
-          }
+        } else if (startInfo || endInfo) {
+          const info = startInfo || endInfo;
+          foundElId = info.elId;
+          minIdx = info.idx;
+          maxIdx = info.idx;
         }
 
         if (foundElId && isFinite(minIdx) && isFinite(maxIdx)) {
@@ -899,14 +894,12 @@ export default function Canvas({ page }) {
                         const isErased = erasedSet.has(absIdx);
                         const cColor = charColors[absIdx] || el.color || '#111111';
                         const cStyle = charStyles[absIdx] || {};
-                        const isCharSelected = charSelection && charSelection.elId === el.id && absIdx >= charSelection.startIdx && absIdx <= charSelection.endIdx;
-
                         return (
                           <span
                             key={cIdx}
                             data-elid={el.id}
                             data-char-idx={absIdx}
-                            className={`canvas-char-span ${isCharSelected ? 'bg-primary/20 rounded-sm' : ''}`}
+                            className="canvas-char-span"
                             style={{
                               display: 'inline',
                               visibility: isErased ? 'hidden' : 'visible',
@@ -914,8 +907,8 @@ export default function Canvas({ page }) {
                               fontWeight: cStyle.bold ? 'bold' : undefined,
                               fontStyle: cStyle.italic ? 'italic' : undefined,
                               textDecoration: cStyle.underline ? 'underline' : undefined,
-                              backgroundColor: cStyle.highlight || (isCharSelected ? 'rgba(255, 51, 31, 0.22)' : undefined),
-                              borderRadius: cStyle.highlight || isCharSelected ? '3px' : undefined,
+                              backgroundColor: cStyle.highlight || undefined,
+                              borderRadius: cStyle.highlight ? '3px' : undefined,
                               userSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
                               WebkitUserSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
                               cursor: (tool === 'select' || tool === 'text') ? 'text' : undefined,
@@ -1022,14 +1015,12 @@ export default function Canvas({ page }) {
                         const isErased = erasedSet.has(absIdx);
                         const cColor = charColors[absIdx] || el.color || '#111111';
                         const cStyle = charStyles[absIdx] || {};
-                        const isCharSelected = charSelection && charSelection.elId === el.id && absIdx >= charSelection.startIdx && absIdx <= charSelection.endIdx;
-
                         return (
                           <span
                             key={cIdx}
                             data-elid={el.id}
                             data-char-idx={absIdx}
-                            className={`canvas-char-span ${isCharSelected ? 'bg-primary/20 rounded-sm' : ''}`}
+                            className="canvas-char-span"
                             style={{
                               display: 'inline',
                               visibility: isErased ? 'hidden' : 'visible',
@@ -1037,8 +1028,8 @@ export default function Canvas({ page }) {
                               fontWeight: cStyle.bold ? 'bold' : undefined,
                               fontStyle: cStyle.italic ? 'italic' : undefined,
                               textDecoration: cStyle.underline ? 'underline' : undefined,
-                              backgroundColor: cStyle.highlight || (isCharSelected ? 'rgba(255, 51, 31, 0.22)' : undefined),
-                              borderRadius: cStyle.highlight || isCharSelected ? '3px' : undefined,
+                              backgroundColor: cStyle.highlight || undefined,
+                              borderRadius: cStyle.highlight ? '3px' : undefined,
                               userSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
                               WebkitUserSelect: (tool === 'select' || tool === 'text') ? 'text' : 'none',
                               cursor: (tool === 'select' || tool === 'text') ? 'text' : undefined,
